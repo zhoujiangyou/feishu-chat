@@ -1,0 +1,30 @@
+# AI GC START
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "feishu-chat-service"
+version = "0.1.0"
+description = "Feishu bot service with task forwarding, model routing, and knowledge base ingestion."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi",
+  "httpx",
+  "pycryptodome",
+  "uvicorn[standard]",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest",
+]
+
+[tool.setuptools]
+packages = ["app", "app.services"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+# AI GC END
