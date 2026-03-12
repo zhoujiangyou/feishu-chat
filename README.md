@@ -79,6 +79,19 @@ pip install -e ".[dev]"
 uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
+## Docker 运行方式
+
+```bash
+cp .env.example .env
+docker compose up -d --build
+```
+
+健康检查：
+
+```bash
+curl http://127.0.0.1:8000/health
+```
+
 ## 核心接口
 
 ### 1. 创建服务实例
@@ -140,6 +153,11 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 - `im:resource`
 - 文档读取相关权限（docx / wiki / drive）
 
+## 部署与飞书配置文档
+
+- 飞书开放平台接入：`docs/feishu-open-platform.md`
+- 生产部署指南：`docs/production-deployment.md`
+
 ## 当前边界说明
 
 这版实现已经能跑通：
@@ -161,6 +179,6 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 ## 测试
 
 ```bash
-pytest
+python3 -m pytest
 ```
 <!-- AI GC END -->
