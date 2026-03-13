@@ -12,9 +12,13 @@ requires-python = ">=3.12"
 dependencies = [
   "fastapi",
   "httpx",
+  "mcp[cli]",
   "pycryptodome",
   "uvicorn[standard]",
 ]
+
+[project.scripts]
+feishu-chat-service-mcp = "app.mcp_server:main"
 
 [project.optional-dependencies]
 dev = [

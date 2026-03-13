@@ -1,7 +1,7 @@
 # AI GC START
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -55,4 +55,10 @@ class KnowledgeSearchResponse(BaseModel):
 class FeishuCallbackAck(BaseModel):
     challenge: str | None = None
     status: str = "ok"
+
+
+class FeishuSendMessageRequest(BaseModel):
+    receive_id: str = Field(min_length=1)
+    text: str = Field(min_length=1)
+    receive_id_type: Literal["chat_id", "open_id", "user_id", "union_id", "email"] = "chat_id"
 # AI GC END

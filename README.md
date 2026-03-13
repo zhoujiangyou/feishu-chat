@@ -92,6 +92,28 @@ docker compose up -d --build
 curl http://127.0.0.1:8000/health
 ```
 
+## MCP 暴露
+
+当前项目已经支持通过 MCP 暴露服务能力。
+
+启动主服务后，再启动 MCP Server：
+
+```bash
+python3 -m app.mcp_server
+```
+
+或者：
+
+```bash
+feishu-chat-service-mcp
+```
+
+默认通过环境变量 `FEISHU_CHAT_SERVICE_BASE_URL` 连接主服务，默认值为：
+
+```text
+http://127.0.0.1:8000
+```
+
 ## 核心接口
 
 ### 1. 创建服务实例
@@ -143,6 +165,10 @@ curl http://127.0.0.1:8000/health
 
 `POST /api/v1/feishu/{service_id}/callback`
 
+### 7. 主动发送飞书消息
+
+`POST /api/v1/services/{service_id}/feishu/messages/send`
+
 ## 推荐飞书权限
 
 至少需要关注这些权限（不同租户控制台命名可能略有差异）：
@@ -156,6 +182,7 @@ curl http://127.0.0.1:8000/health
 ## 部署与飞书配置文档
 
 - 飞书开放平台接入：`docs/feishu-open-platform.md`
+- MCP 集成指南：`docs/mcp-integration.md`
 - 生产部署指南：`docs/production-deployment.md`
 
 ## 当前边界说明

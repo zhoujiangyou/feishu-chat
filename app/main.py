@@ -13,6 +13,7 @@ from app.schemas import (
     FeishuDocumentImportRequest,
     FeishuImageImportRequest,
     KnowledgeSearchResponse,
+    FeishuSendMessageRequest,
     ServiceCreateRequest,
     ServiceResponse,
     TextKnowledgeImportRequest,
@@ -146,6 +147,30 @@ async def import_feishu_image(service_id: str, payload: FeishuImageImportRequest
     finally:
         await client.close()
     return {"status": "ok", "source": source}
+
+
+@app.post("/api/v1/services/{service_id}/feishu/messages/send")
+async def send_feishu_message(service_id: str, payload: FeishuSendMessageRequest) -> dict[str, Any]:
+    service = get_service_or_404(service_id)
+    client = FeishuClient(service)
+    try:
+        result = await client.send_text_message(
+            receive_id=payload.receive_id,
+            text=payload.text,
+            receive_id_type=payload.receive_id_type,
+        )
+    finally:
+        await client.close()
+
+    db.log_conversation(
+        service_id=service_id,
+        direction="outgoing",
+        chat_id=payload.receive_id if payload.receive_id_type == "chat_id" else None,
+        user_id=payload.receive_id if payload.receive_id_type != "chat_id" else None,
+        content=payload.text,
+        metadata={"receive_id_type": payload.receive_id_type, "result": result},
+    )
+    return {"status": "ok", "result": result}
 
 
 @app.get("/api/v1/services/{service_id}/knowledge-base/search", response_model=KnowledgeSearchResponse)
