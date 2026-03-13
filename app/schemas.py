@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class ServiceCreateRequest(BaseModel):
@@ -61,4 +61,41 @@ class FeishuSendMessageRequest(BaseModel):
     receive_id: str = Field(min_length=1)
     text: str = Field(min_length=1)
     receive_id_type: Literal["chat_id", "open_id", "user_id", "union_id", "email"] = "chat_id"
+
+
+class LlmQuestionRequest(BaseModel):
+    question: str = Field(min_length=1)
+    use_knowledge_base: bool = True
+    knowledge_limit: int = Field(default=5, ge=1, le=20)
+    system_prompt_override: str | None = None
+
+
+class LlmQuestionResponse(BaseModel):
+    answer: str
+    knowledge_results: list[dict[str, Any]]
+
+
+class LlmImageAnalyzeRequest(BaseModel):
+    prompt: str = Field(min_length=1)
+    image_url: str | None = None
+    image_base64: str | None = None
+    image_mime_type: str | None = "image/png"
+    image_key: str | None = None
+    message_id: str | None = None
+    use_knowledge_base: bool = False
+    knowledge_query: str | None = None
+    knowledge_limit: int = Field(default=5, ge=1, le=20)
+    system_prompt_override: str | None = None
+
+    @model_validator(mode="after")
+    def validate_image_source(self) -> "LlmImageAnalyzeRequest":
+        if any([self.image_url, self.image_base64, self.image_key, self.message_id]):
+            return self
+        raise ValueError("One of image_url, image_base64, image_key, or message_id is required.")
+
+
+class LlmImageAnalyzeResponse(BaseModel):
+    answer: str
+    knowledge_results: list[dict[str, Any]]
+    image_source: str
 # AI GC END

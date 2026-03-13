@@ -92,6 +92,13 @@ docker compose up -d --build
 curl http://127.0.0.1:8000/health
 ```
 
+## OpenAPI 文档
+
+服务启动后可直接访问：
+
+- Swagger UI：`/docs`
+- OpenAPI JSON：`/openapi.json`
+
 ## MCP 暴露
 
 当前项目已经支持通过 MCP 暴露服务能力。
@@ -123,6 +130,11 @@ MCP Server 现在内置了定时任务管理能力，可用于定时执行这些
 - 定时抓取飞书文档
 - 定时抓取图片
 - 定时导入文本知识
+
+同时也支持通过 OpenAI 兼容接口直接调用模型能力：
+
+- 文本问答
+- 图像理解 / 图像问答
 
 如果你希望定时任务长期生效，建议把 MCP Server 以长期进程方式运行：
 
@@ -185,6 +197,21 @@ MCP Server 现在内置了定时任务管理能力，可用于定时执行这些
 ### 7. 主动发送飞书消息
 
 `POST /api/v1/services/{service_id}/feishu/messages/send`
+
+### 8. 文本问答 OpenAPI
+
+`POST /api/v1/services/{service_id}/llm/ask`
+
+### 9. 图像理解 OpenAPI
+
+`POST /api/v1/services/{service_id}/llm/image-analyze`
+
+图像分析支持以下输入来源：
+
+- `image_url`
+- `image_base64`
+- 飞书 `image_key`
+- 飞书 `message_id`
 
 ## 推荐飞书权限
 

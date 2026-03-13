@@ -17,6 +17,8 @@
 - `search_knowledge`
 - `list_knowledge_sources`
 - `send_feishu_message`
+- `ask_llm_question`
+- `analyze_image_with_llm`
 - `list_supported_scheduled_actions`
 - `create_interval_scheduled_task`
 - `list_scheduled_tasks`
@@ -32,7 +34,8 @@
 2. 导入和检索知识库
 3. 抓取飞书文档、群聊、图片
 4. 主动向飞书群组或个人发送消息
-5. 在 MCP Server 内部创建和管理定时任务
+5. 直接调用 OpenAI 兼容模型做文本问答和图像理解
+6. 在 MCP Server 内部创建和管理定时任务
 
 ## 二、运行方式
 
@@ -168,7 +171,31 @@ export FEISHU_CHAT_MCP_SCHEDULER_POLL_SECONDS=5
 - 发群：`receive_id_type=chat_id`
 - 发个人：`receive_id_type=open_id` 或 `user_id`
 
-### 5. 让 Agent 创建定时任务
+### 5. 让 Agent 调用文本问答
+
+调用：
+
+- `ask_llm_question`
+
+适合这些场景：
+
+- 让 Agent 直接调用后台配置的大模型回答问题
+- 可选开启知识库检索增强
+
+### 6. 让 Agent 调用图像理解
+
+调用：
+
+- `analyze_image_with_llm`
+
+图像输入支持：
+
+- `image_url`
+- `image_base64`
+- 飞书 `image_key`
+- 飞书 `message_id`
+
+### 7. 让 Agent 创建定时任务
 
 先查看支持的动作：
 
@@ -196,7 +223,7 @@ export FEISHU_CHAT_MCP_SCHEDULER_POLL_SECONDS=5
 }
 ```
 
-### 6. 管理定时任务
+### 8. 管理定时任务
 
 - `list_scheduled_tasks`
 - `get_scheduled_task`

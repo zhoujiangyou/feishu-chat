@@ -36,7 +36,8 @@ mcp = FastMCP(
     name="Feishu Chat Service MCP",
     instructions=(
         "This MCP server exposes Feishu Chat Service capabilities, including service creation, "
-        "knowledge-base ingestion/search, Feishu message sending, and internal scheduled task management."
+        "knowledge-base ingestion/search, OpenAI-compatible question answering and image analysis, "
+        "Feishu message sending, and internal scheduled task management."
     ),
     host=MCP_HOST,
     port=MCP_PORT,
@@ -206,6 +207,60 @@ async def send_feishu_message(
         receive_id=receive_id,
         text=text,
         receive_id_type=receive_id_type,
+    )
+
+
+@mcp.tool(
+    name="ask_llm_question",
+    description="Call the configured OpenAI-compatible model for question answering, optionally with knowledge-base retrieval.",
+)
+async def ask_llm_question(
+    service_id: str,
+    question: str,
+    use_knowledge_base: bool = True,
+    knowledge_limit: int = 5,
+    system_prompt_override: str | None = None,
+) -> dict[str, Any]:
+    client = _api_client()
+    return await client.ask_with_llm(
+        service_id=service_id,
+        question=question,
+        use_knowledge_base=use_knowledge_base,
+        knowledge_limit=knowledge_limit,
+        system_prompt_override=system_prompt_override,
+    )
+
+
+@mcp.tool(
+    name="analyze_image_with_llm",
+    description="Call the configured OpenAI-compatible multimodal model to analyze an image by URL, base64, image_key, or message_id.",
+)
+async def analyze_image_with_llm(
+    service_id: str,
+    prompt: str,
+    image_url: str | None = None,
+    image_base64: str | None = None,
+    image_mime_type: str | None = None,
+    image_key: str | None = None,
+    message_id: str | None = None,
+    use_knowledge_base: bool = False,
+    knowledge_query: str | None = None,
+    knowledge_limit: int = 5,
+    system_prompt_override: str | None = None,
+) -> dict[str, Any]:
+    client = _api_client()
+    return await client.analyze_image_with_llm(
+        service_id=service_id,
+        prompt=prompt,
+        image_url=image_url,
+        image_base64=image_base64,
+        image_mime_type=image_mime_type,
+        image_key=image_key,
+        message_id=message_id,
+        use_knowledge_base=use_knowledge_base,
+        knowledge_query=knowledge_query,
+        knowledge_limit=knowledge_limit,
+        system_prompt_override=system_prompt_override,
     )
 
 

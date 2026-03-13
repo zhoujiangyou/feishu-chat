@@ -164,4 +164,56 @@ class FeishuChatServiceApiClient:
                 "receive_id_type": receive_id_type,
             },
         )
+
+    async def ask_with_llm(
+        self,
+        *,
+        service_id: str,
+        question: str,
+        use_knowledge_base: bool = True,
+        knowledge_limit: int = 5,
+        system_prompt_override: str | None = None,
+    ) -> dict[str, Any]:
+        return await self._request(
+            "POST",
+            f"/api/v1/services/{service_id}/llm/ask",
+            json={
+                "question": question,
+                "use_knowledge_base": use_knowledge_base,
+                "knowledge_limit": knowledge_limit,
+                "system_prompt_override": system_prompt_override,
+            },
+        )
+
+    async def analyze_image_with_llm(
+        self,
+        *,
+        service_id: str,
+        prompt: str,
+        image_url: str | None = None,
+        image_base64: str | None = None,
+        image_mime_type: str | None = None,
+        image_key: str | None = None,
+        message_id: str | None = None,
+        use_knowledge_base: bool = False,
+        knowledge_query: str | None = None,
+        knowledge_limit: int = 5,
+        system_prompt_override: str | None = None,
+    ) -> dict[str, Any]:
+        return await self._request(
+            "POST",
+            f"/api/v1/services/{service_id}/llm/image-analyze",
+            json={
+                "prompt": prompt,
+                "image_url": image_url,
+                "image_base64": image_base64,
+                "image_mime_type": image_mime_type,
+                "image_key": image_key,
+                "message_id": message_id,
+                "use_knowledge_base": use_knowledge_base,
+                "knowledge_query": knowledge_query,
+                "knowledge_limit": knowledge_limit,
+                "system_prompt_override": system_prompt_override,
+            },
+        )
 # AI GC END

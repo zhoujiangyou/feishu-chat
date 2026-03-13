@@ -1,6 +1,7 @@
 # AI GC START
 from __future__ import annotations
 
+import base64
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -12,6 +13,10 @@ from app.schemas import (
     FeishuChatImportRequest,
     FeishuDocumentImportRequest,
     FeishuImageImportRequest,
+    LlmImageAnalyzeRequest,
+    LlmImageAnalyzeResponse,
+    LlmQuestionRequest,
+    LlmQuestionResponse,
     KnowledgeSearchResponse,
     FeishuSendMessageRequest,
     ServiceCreateRequest,
@@ -19,8 +24,14 @@ from app.schemas import (
     TextKnowledgeImportRequest,
 )
 from app.services.bot import handle_event
-from app.services.feishu import FeishuClient, FeishuError, decode_callback_body
+from app.services.feishu import (
+    FeishuClient,
+    FeishuError,
+    decode_callback_body,
+    extract_image_key_from_message,
+)
 from app.services.knowledge_base import KnowledgeBaseService, build_default_knowledge
+from app.services.llm import OpenAICompatibleLLM
 
 
 @asynccontextmanager
@@ -171,6 +182,80 @@ async def send_feishu_message(service_id: str, payload: FeishuSendMessageRequest
         metadata={"receive_id_type": payload.receive_id_type, "result": result},
     )
     return {"status": "ok", "result": result}
+
+
+@app.post("/api/v1/services/{service_id}/llm/ask", response_model=LlmQuestionResponse)
+async def ask_with_llm(service_id: str, payload: LlmQuestionRequest) -> LlmQuestionResponse:
+    service = get_service_or_404(service_id)
+    kb = KnowledgeBaseService()
+    knowledge = (
+        kb.search(service_id=service_id, query=payload.question, limit=payload.knowledge_limit)
+        if payload.use_knowledge_base
+        else []
+    )
+    llm = OpenAICompatibleLLM(service)
+    answer = await llm.answer(
+        question=payload.question,
+        knowledge=knowledge,
+        system_prompt_override=payload.system_prompt_override,
+    )
+    return LlmQuestionResponse(answer=answer, knowledge_results=knowledge)
+
+
+async def _resolve_image_analysis_input(
+    *,
+    service: dict[str, Any],
+    payload: LlmImageAnalyzeRequest,
+) -> tuple[dict[str, Any], str]:
+    if payload.image_url:
+        return {"image_url": payload.image_url}, "image_url"
+    if payload.image_base64:
+        return {
+            "image_base64": payload.image_base64,
+            "image_mime_type": payload.image_mime_type or "image/png",
+        }, "image_base64"
+
+    client = FeishuClient(service)
+    try:
+        image_key = payload.image_key
+        if not image_key and payload.message_id:
+            message = await client.get_message(payload.message_id)
+            image_key = extract_image_key_from_message(message)
+        if not image_key:
+            raise HTTPException(status_code=400, detail="Unable to resolve image_key from Feishu message.")
+        image_bytes, mime_type = await client.download_image(image_key)
+    finally:
+        await client.close()
+
+    return {
+        "image_base64": base64.b64encode(image_bytes).decode("utf-8"),
+        "image_mime_type": mime_type or payload.image_mime_type or "image/png",
+    }, "feishu_image"
+
+
+@app.post("/api/v1/services/{service_id}/llm/image-analyze", response_model=LlmImageAnalyzeResponse)
+async def analyze_image_with_llm(service_id: str, payload: LlmImageAnalyzeRequest) -> LlmImageAnalyzeResponse:
+    service = get_service_or_404(service_id)
+    kb = KnowledgeBaseService()
+    knowledge_query = payload.knowledge_query or payload.prompt
+    knowledge = (
+        kb.search(service_id=service_id, query=knowledge_query, limit=payload.knowledge_limit)
+        if payload.use_knowledge_base
+        else []
+    )
+    image_kwargs, image_source = await _resolve_image_analysis_input(service=service, payload=payload)
+    llm = OpenAICompatibleLLM(service)
+    answer = await llm.analyze_image(
+        prompt=payload.prompt,
+        knowledge=knowledge,
+        system_prompt_override=payload.system_prompt_override,
+        **image_kwargs,
+    )
+    return LlmImageAnalyzeResponse(
+        answer=answer,
+        knowledge_results=knowledge,
+        image_source=image_source,
+    )
 
 
 @app.get("/api/v1/services/{service_id}/knowledge-base/search", response_model=KnowledgeSearchResponse)
