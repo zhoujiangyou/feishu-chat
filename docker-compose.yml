@@ -23,4 +23,26 @@ services:
       timeout: 5s
       retries: 3
       start_period: 15s
+
+  feishu-chat-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: feishu-chat-service:latest
+    container_name: feishu-chat-mcp
+    restart: unless-stopped
+    depends_on:
+      - feishu-chat-service
+    env_file:
+      - .env
+    environment:
+      FEISHU_CHAT_SERVICE_BASE_URL: http://feishu-chat-service:8000
+      FEISHU_CHAT_MCP_TRANSPORT: streamable-http
+      FEISHU_CHAT_MCP_HOST: 0.0.0.0
+      FEISHU_CHAT_MCP_PORT: 9000
+    command: ["python", "-m", "app.mcp_server"]
+    ports:
+      - "${FEISHU_CHAT_MCP_PORT:-9000}:9000"
+    volumes:
+      - ./data:/app/data
 # AI GC END

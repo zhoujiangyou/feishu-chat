@@ -1,11 +1,13 @@
 # AI GC START
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 import os
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
+from app.services.mcp_scheduler import ScheduledTaskManager, SUPPORTED_SCHEDULED_ACTIONS
 from app.services.service_api import FeishuChatServiceApiClient
 
 
@@ -14,20 +16,33 @@ MCP_HOST = os.environ.get("FEISHU_CHAT_MCP_HOST", "127.0.0.1")
 MCP_PORT = int(os.environ.get("FEISHU_CHAT_MCP_PORT", "9000"))
 
 
+def _api_client() -> FeishuChatServiceApiClient:
+    return FeishuChatServiceApiClient()
+
+
+scheduler_manager = ScheduledTaskManager(api_client_factory=_api_client)
+
+
+@asynccontextmanager
+async def _mcp_lifespan(_: FastMCP):
+    await scheduler_manager.start()
+    try:
+        yield
+    finally:
+        await scheduler_manager.stop()
+
+
 mcp = FastMCP(
     name="Feishu Chat Service MCP",
     instructions=(
         "This MCP server exposes Feishu Chat Service capabilities, including service creation, "
-        "knowledge-base ingestion/search, and Feishu message sending."
+        "knowledge-base ingestion/search, Feishu message sending, and internal scheduled task management."
     ),
     host=MCP_HOST,
     port=MCP_PORT,
     json_response=True,
+    lifespan=_mcp_lifespan,
 )
-
-
-def _api_client() -> FeishuChatServiceApiClient:
-    return FeishuChatServiceApiClient()
 
 
 @mcp.tool(
@@ -192,6 +207,89 @@ async def send_feishu_message(
         text=text,
         receive_id_type=receive_id_type,
     )
+
+
+@mcp.tool(
+    name="list_supported_scheduled_actions",
+    description="List the action types supported by the internal MCP scheduler.",
+)
+def list_supported_scheduled_actions() -> dict[str, Any]:
+    return {"items": SUPPORTED_SCHEDULED_ACTIONS}
+
+
+@mcp.tool(
+    name="create_interval_scheduled_task",
+    description="Create an interval-based task inside the MCP server to periodically invoke a service action.",
+)
+def create_interval_scheduled_task(
+    name: str,
+    service_id: str,
+    action_type: str,
+    payload: dict[str, Any],
+    interval_seconds: int,
+    enabled: bool = True,
+    run_immediately: bool = False,
+) -> dict[str, Any]:
+    task = scheduler_manager.create_interval_task(
+        name=name,
+        service_id=service_id,
+        action_type=action_type,
+        payload=payload,
+        interval_seconds=interval_seconds,
+        enabled=enabled,
+        run_immediately=run_immediately,
+    )
+    return {"task": task}
+
+
+@mcp.tool(
+    name="list_scheduled_tasks",
+    description="List scheduled tasks currently managed by the MCP server.",
+)
+def list_scheduled_tasks(service_id: str | None = None) -> dict[str, Any]:
+    return {"items": scheduler_manager.list_tasks(service_id=service_id)}
+
+
+@mcp.tool(
+    name="get_scheduled_task",
+    description="Get a single scheduled task by task_id.",
+)
+def get_scheduled_task(task_id: str) -> dict[str, Any]:
+    return {"task": scheduler_manager.get_task(task_id)}
+
+
+@mcp.tool(
+    name="pause_scheduled_task",
+    description="Pause a scheduled task so it stops running until resumed.",
+)
+def pause_scheduled_task(task_id: str) -> dict[str, Any]:
+    return {"task": scheduler_manager.pause_task(task_id)}
+
+
+@mcp.tool(
+    name="resume_scheduled_task",
+    description="Resume a paused scheduled task and recalculate its next run time.",
+)
+def resume_scheduled_task(task_id: str) -> dict[str, Any]:
+    return {"task": scheduler_manager.resume_task(task_id)}
+
+
+@mcp.tool(
+    name="delete_scheduled_task",
+    description="Delete a scheduled task from the MCP server.",
+)
+def delete_scheduled_task(task_id: str) -> dict[str, Any]:
+    scheduler_manager.delete_task(task_id)
+    return {"status": "deleted", "task_id": task_id}
+
+
+@mcp.tool(
+    name="run_scheduled_task_now",
+    description="Execute a scheduled task immediately and update its execution state.",
+)
+async def run_scheduled_task_now(task_id: str) -> dict[str, Any]:
+    task = await scheduler_manager.run_task_now(task_id)
+    return {"task": task}
 
 
 def main() -> None:

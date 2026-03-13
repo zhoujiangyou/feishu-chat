@@ -17,6 +17,7 @@
 当前项目最简单稳定的上线方式是：
 
 - 应用容器：FastAPI + Uvicorn
+- MCP 容器：承载 MCP tools 和内部定时任务
 - 反向代理：Nginx / Traefik / 云负载均衡
 - 数据存储：本地持久卷（当前版本使用 SQLite）
 
@@ -41,6 +42,11 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
+这会同时启动：
+
+- `feishu-chat-service`
+- `feishu-chat-mcp`
+
 ### 步骤 3：检查健康状态
 
 ```bash
@@ -63,6 +69,7 @@ curl http://127.0.0.1:8000/health
 
 - SQLite 数据库
 - 抓取下来的图片文件
+- MCP 定时任务数据库
 
 因此生产环境必须持久化挂载：
 
@@ -103,7 +110,17 @@ curl http://127.0.0.1:8000/health
 3. 检索层升级为向量数据库
 4. SQLite 升级为 PostgreSQL
 
-## 8. 发布后的操作顺序
+## 8. MCP 与定时任务说明
+
+当前定时任务是在 MCP Server 进程内部执行的，所以生产环境里要确保 `feishu-chat-mcp` 持续运行。
+
+推荐：
+
+- 使用 `streamable-http` 模式部署 MCP
+- 保持 `./data:/app/data` 挂载
+- 通过进程管理或容器重启策略保证 MCP 服务长期存活
+
+## 9. 发布后的操作顺序
 
 建议按这个顺序执行：
 
@@ -114,7 +131,7 @@ curl http://127.0.0.1:8000/health
 5. 发送 challenge 验证
 6. 在群里测试命令和普通问答
 
-## 9. 故障处理建议
+## 10. 故障处理建议
 
 ### 回调大量失败
 
