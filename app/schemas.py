@@ -86,6 +86,8 @@ class LlmImageAnalyzeRequest(BaseModel):
     knowledge_query: str | None = None
     knowledge_limit: int = Field(default=5, ge=1, le=20)
     system_prompt_override: str | None = None
+    save_analysis_to_knowledge_base: bool = False
+    analysis_title: str | None = None
 
     @model_validator(mode="after")
     def validate_image_source(self) -> "LlmImageAnalyzeRequest":
@@ -98,6 +100,7 @@ class LlmImageAnalyzeResponse(BaseModel):
     answer: str
     knowledge_results: list[dict[str, Any]]
     image_source: str
+    saved_source: dict[str, Any] | None = None
 
 
 class FeishuChatSummaryRequest(BaseModel):
@@ -110,6 +113,8 @@ class FeishuChatSummaryRequest(BaseModel):
     system_prompt_override: str | None = None
     send_to_receive_id: str | None = None
     send_to_receive_id_type: Literal["chat_id", "open_id", "user_id", "union_id", "email"] = "chat_id"
+    save_summary_to_knowledge_base: bool = False
+    summary_title: str | None = None
 
 
 class FeishuChatSummaryResponse(BaseModel):
@@ -118,4 +123,5 @@ class FeishuChatSummaryResponse(BaseModel):
     summary: str
     knowledge_results: list[dict[str, Any]]
     sent_result: dict[str, Any] | None = None
+    saved_source: dict[str, Any] | None = None
 # AI GC END

@@ -60,6 +60,8 @@ SUPPORTED_SCHEDULED_ACTIONS: dict[str, dict[str, Any]] = {
             "system_prompt_override",
             "send_to_receive_id",
             "send_to_receive_id_type",
+            "save_summary_to_knowledge_base",
+            "summary_title",
         ],
     },
 }
@@ -125,6 +127,7 @@ def _validate_payload(action_type: str, payload: dict[str, Any]) -> dict[str, An
         normalized.setdefault("use_knowledge_base", False)
         normalized.setdefault("knowledge_limit", 5)
         normalized.setdefault("send_to_receive_id_type", "chat_id")
+        normalized.setdefault("save_summary_to_knowledge_base", False)
     return normalized
 
 

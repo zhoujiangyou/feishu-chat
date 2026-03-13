@@ -85,6 +85,8 @@ class FakeLlmServiceApiClient:
         knowledge_query: str | None = None,
         knowledge_limit: int = 5,
         system_prompt_override: str | None = None,
+        save_analysis_to_knowledge_base: bool = False,
+        analysis_title: str | None = None,
     ) -> dict[str, object]:
         return {
             "answer": "delegated image answer",
@@ -99,6 +101,8 @@ class FakeLlmServiceApiClient:
             "system_prompt_override": system_prompt_override,
             "image_mime_type": image_mime_type,
             "image_base64": image_base64,
+            "save_analysis_to_knowledge_base": save_analysis_to_knowledge_base,
+            "analysis_title": analysis_title,
         }
 
 
@@ -159,12 +163,15 @@ def test_llm_image_analyze_endpoint_supports_feishu_message_image(tmp_path, monk
                 "prompt": "请描述这张图",
                 "message_id": "om_xxx",
                 "use_knowledge_base": False,
+                "save_analysis_to_knowledge_base": True,
+                "analysis_title": "飞书图片分析结果",
             },
         )
         assert response.status_code == 200
         payload = response.json()
         assert payload["image_source"] == "feishu_image"
         assert "image:请描述这张图" in payload["answer"]
+        assert payload["saved_source"] is not None
 
 
 @pytest.mark.anyio

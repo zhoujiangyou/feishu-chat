@@ -253,10 +253,28 @@ async def analyze_image_with_llm(service_id: str, payload: LlmImageAnalyzeReques
         system_prompt_override=payload.system_prompt_override,
         **image_kwargs,
     )
+    saved_source = None
+    if payload.save_analysis_to_knowledge_base:
+        title = payload.analysis_title or f"Image Analysis {image_source}"
+        saved_source = kb.ingest_generated_artifact(
+            service_id=service_id,
+            title=title,
+            content=answer,
+            source_type="llm_image_analysis",
+            external_id=payload.image_key or payload.message_id or payload.image_url or image_source,
+            metadata={
+                "image_source": image_source,
+                "prompt": payload.prompt,
+                "image_url": payload.image_url,
+                "image_key": payload.image_key,
+                "message_id": payload.message_id,
+            },
+        )
     return LlmImageAnalyzeResponse(
         answer=answer,
         knowledge_results=knowledge,
         image_source=image_source,
+        saved_source=saved_source,
     )
 
 
@@ -269,6 +287,8 @@ async def analyze_uploaded_image_with_llm(
     knowledge_query: str | None = Form(None),
     knowledge_limit: int = Form(5),
     system_prompt_override: str | None = Form(None),
+    save_analysis_to_knowledge_base: bool = Form(False),
+    analysis_title: str | None = Form(None),
 ) -> LlmImageAnalyzeResponse:
     service = get_service_or_404(service_id)
     file_bytes = await file.read()
@@ -289,10 +309,26 @@ async def analyze_uploaded_image_with_llm(
         image_mime_type=file.content_type or "application/octet-stream",
         system_prompt_override=system_prompt_override,
     )
+    saved_source = None
+    if save_analysis_to_knowledge_base:
+        saved_source = kb.ingest_generated_artifact(
+            service_id=service_id,
+            title=analysis_title or f"Uploaded Image Analysis {file.filename or 'file'}",
+            content=answer,
+            source_type="llm_image_analysis",
+            external_id=file.filename,
+            metadata={
+                "image_source": "upload_file",
+                "file_name": file.filename,
+                "mime_type": file.content_type,
+                "prompt": prompt,
+            },
+        )
     return LlmImageAnalyzeResponse(
         answer=answer,
         knowledge_results=knowledge,
         image_source="upload_file",
+        saved_source=saved_source,
     )
 
 
@@ -325,6 +361,21 @@ async def summarize_feishu_chat(service_id: str, payload: FeishuChatSummaryReque
             knowledge=knowledge,
             system_prompt_override=payload.system_prompt_override,
         )
+        saved_source: dict[str, Any] | None = None
+        if payload.save_summary_to_knowledge_base:
+            saved_source = kb.ingest_generated_artifact(
+                service_id=service_id,
+                title=payload.summary_title or f"Chat Summary {payload.chat_id}",
+                content=summary,
+                source_type="chat_summary",
+                external_id=payload.chat_id,
+                metadata={
+                    "chat_id": payload.chat_id,
+                    "limit": payload.limit,
+                    "message_count": transcript_count,
+                    "summary_prompt": payload.summary_prompt,
+                },
+            )
 
         sent_result: dict[str, Any] | None = None
         if payload.send_to_receive_id:
@@ -354,6 +405,7 @@ async def summarize_feishu_chat(service_id: str, payload: FeishuChatSummaryReque
         summary=summary,
         knowledge_results=knowledge,
         sent_result=sent_result,
+        saved_source=saved_source,
     )
 
 

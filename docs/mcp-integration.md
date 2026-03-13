@@ -197,6 +197,11 @@ export FEISHU_CHAT_MCP_SCHEDULER_POLL_SECONDS=5
 - 飞书 `image_key`
 - 飞书 `message_id`
 
+如果希望把分析结果沉淀到知识库，还可以传：
+
+- `save_analysis_to_knowledge_base=true`
+- `analysis_title`
+
 ### 7. 让 Agent 总结群聊
 
 调用：
@@ -208,6 +213,11 @@ export FEISHU_CHAT_MCP_SCHEDULER_POLL_SECONDS=5
 - 汇总某个群最近的讨论
 - 做例会纪要
 - 结合定时任务定期生成日报 / 周报
+
+如果希望把总结结果也写入知识库，还可以传：
+
+- `save_summary_to_knowledge_base=true`
+- `summary_title`
 
 ### 8. 让 Agent 创建定时任务
 

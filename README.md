@@ -65,10 +65,18 @@
 - `/help`
 - `抓取文档 <文档链接或 token>`
 - `抓取群聊 <chat_id> [limit]`
+- `抓取当前群 [limit]`
+- `总结当前群 [limit]`
 - `抓取图片 <image_key 或 message_id>`
 - `/kb doc <文档链接或 token>`
 - `/kb chat <chat_id> [limit]`
 - `/kb image <image_key 或 message_id>`
+
+其中：
+
+- `抓取当前群` 会直接使用当前会话里的 `chat_id`
+- `总结当前群` 会拉取当前群消息、调用大模型总结，并把总结结果写回知识库
+- 直接发送图片时，机器人会自动做视觉分析，并把分析结果写回知识库
 
 ## 运行方式
 
@@ -214,6 +222,11 @@ MCP Server 现在内置了定时任务管理能力，可用于定时执行这些
 - 飞书 `image_key`
 - 飞书 `message_id`
 
+如果你希望把分析结果写回知识库，可传：
+
+- `save_analysis_to_knowledge_base=true`
+- `analysis_title`
+
 ### 10. 上传文件做图像分析
 
 `POST /api/v1/services/{service_id}/llm/image-analyze/upload`
@@ -229,6 +242,7 @@ MCP Server 现在内置了定时任务管理能力，可用于定时执行这些
 - 拉取指定群最近 N 条消息
 - 调用大模型总结
 - 可选把总结直接回发到某个群或个人
+- 可选把总结结果写回知识库
 
 ## 推荐飞书权限
 

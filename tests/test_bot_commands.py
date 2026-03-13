@@ -28,6 +28,16 @@ def test_parse_import_commands() -> None:
     assert image.name == "import_image"
     assert image.value == "img_xxx"
 
+    current_chat = parse_bot_command("抓取当前群 50")
+    assert current_chat is not None
+    assert current_chat.name == "import_current_chat"
+    assert current_chat.limit == 50
+
+    summary = parse_bot_command("总结当前群 30")
+    assert summary is not None
+    assert summary.name == "summarize_current_chat"
+    assert summary.limit == 30
+
 
 def test_decode_plain_callback_body() -> None:
     payload = decode_callback_body(

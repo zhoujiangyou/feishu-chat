@@ -199,6 +199,8 @@ class FeishuChatServiceApiClient:
         knowledge_query: str | None = None,
         knowledge_limit: int = 5,
         system_prompt_override: str | None = None,
+        save_analysis_to_knowledge_base: bool = False,
+        analysis_title: str | None = None,
     ) -> dict[str, Any]:
         return await self._request(
             "POST",
@@ -214,6 +216,8 @@ class FeishuChatServiceApiClient:
                 "knowledge_query": knowledge_query,
                 "knowledge_limit": knowledge_limit,
                 "system_prompt_override": system_prompt_override,
+                "save_analysis_to_knowledge_base": save_analysis_to_knowledge_base,
+                "analysis_title": analysis_title,
             },
         )
 
@@ -230,6 +234,8 @@ class FeishuChatServiceApiClient:
         system_prompt_override: str | None = None,
         send_to_receive_id: str | None = None,
         send_to_receive_id_type: str = "chat_id",
+        save_summary_to_knowledge_base: bool = False,
+        summary_title: str | None = None,
     ) -> dict[str, Any]:
         return await self._request(
             "POST",
@@ -244,6 +250,8 @@ class FeishuChatServiceApiClient:
                 "system_prompt_override": system_prompt_override,
                 "send_to_receive_id": send_to_receive_id,
                 "send_to_receive_id_type": send_to_receive_id_type,
+                "save_summary_to_knowledge_base": save_summary_to_knowledge_base,
+                "summary_title": summary_title,
             },
         )
 # AI GC END

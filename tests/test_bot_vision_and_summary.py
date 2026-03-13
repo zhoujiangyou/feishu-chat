@@ -34,22 +34,33 @@ class FakeVisionLLM:
         return f"群聊总结:{question[:12]}|kb={len(knowledge)}|prompt={system_prompt_override or 'default'}"
 
 
-class FakeBotKbService:
-    async def import_feishu_image(self, **_: object) -> dict[str, str]:
-        return {"id": "src_123", "title": "Image from chat"}
-
-    def search(self, **_: object):
-        return []
-
-
 class FakeBotFeishuClient:
     last_reply: str | None = None
 
     def __init__(self, service: dict[str, str]) -> None:
         self.service = service
 
+    async def get_message(self, message_id: str) -> dict[str, object]:
+        return {"content": '{"image_key":"img_123"}'}
+
     async def download_image(self, image_key: str) -> tuple[bytes, str | None]:
         return b"fake-image", "image/png"
+
+    async def list_chat_messages(self, *, chat_id: str, limit: int = 100):
+        return [
+            {
+                "message_type": "text",
+                "create_time": "1",
+                "sender": {"sender_id": {"open_id": "ou_1"}},
+                "content": '{"text":"当前群讨论了测试发布"}',
+            },
+            {
+                "message_type": "text",
+                "create_time": "2",
+                "sender": {"sender_id": {"open_id": "ou_2"}},
+                "content": '{"text":"需要安排回归测试"}',
+            },
+        ]
 
     async def reply_text_message(self, *, message_id: str, text: str) -> dict[str, object]:
         type(self).last_reply = text
@@ -130,7 +141,6 @@ async def test_bot_image_message_triggers_vision_reply(tmp_path, monkeypatch) ->
             "llm_system_prompt": "你是测试助手。",
         }
     )
-    monkeypatch.setattr(bot_module, "KnowledgeBaseService", FakeBotKbService)
     monkeypatch.setattr(bot_module, "OpenAICompatibleLLM", FakeVisionLLM)
     monkeypatch.setattr(bot_module, "FeishuClient", FakeBotFeishuClient)
     FakeBotFeishuClient.last_reply = None
@@ -152,6 +162,52 @@ async def test_bot_image_message_triggers_vision_reply(tmp_path, monkeypatch) ->
     assert result["status"] == "ingested_image"
     assert FakeBotFeishuClient.last_reply is not None
     assert "图片分析：" in FakeBotFeishuClient.last_reply
+    sources = db.list_sources(service["id"])
+    source_types = {item["source_type"] for item in sources}
+    assert "feishu_image" in source_types
+    assert "llm_image_analysis" in source_types
+
+
+@pytest.mark.anyio
+async def test_bot_current_chat_shortcuts_write_to_knowledge_base(tmp_path, monkeypatch) -> None:
+    db.DB_PATH = tmp_path / "bot-current-chat.db"
+    db.init_db()
+    service = db.create_service(
+        {
+            "name": "current-chat-bot",
+            "feishu_app_id": "cli_demo",
+            "feishu_app_secret": "secret",
+            "verification_token": "verify",
+            "encrypt_key": "encrypt",
+            "llm_base_url": "https://example.com/v1",
+            "llm_api_key": "sk-demo",
+            "llm_model": "test-model",
+            "llm_system_prompt": "你是测试助手。",
+        }
+    )
+    monkeypatch.setattr(bot_module, "OpenAICompatibleLLM", FakeVisionLLM)
+    monkeypatch.setattr(bot_module, "FeishuClient", FakeBotFeishuClient)
+    FakeBotFeishuClient.last_reply = None
+
+    payload = {
+        "header": {"event_type": "im.message.receive_v1"},
+        "event": {
+            "sender": {"sender_type": "user", "sender_id": {"open_id": "ou_123"}},
+            "message": {
+                "message_type": "text",
+                "chat_id": "oc_123",
+                "message_id": "om_234",
+                "content": '{"text":"总结当前群 20"}',
+            },
+        },
+    }
+
+    result = await bot_module.handle_event(service, payload)
+    assert result["status"] == "command_executed"
+    assert FakeBotFeishuClient.last_reply is not None
+    assert "群聊总结:" in FakeBotFeishuClient.last_reply
+    sources = db.list_sources(service["id"])
+    assert any(item["source_type"] == "chat_summary" for item in sources)
 
 
 def test_upload_image_analysis_endpoint(tmp_path, monkeypatch) -> None:
@@ -162,13 +218,20 @@ def test_upload_image_analysis_endpoint(tmp_path, monkeypatch) -> None:
         service_id = _create_service(client)
         response = client.post(
             f"/api/v1/services/{service_id}/llm/image-analyze/upload",
-            data={"prompt": "请分析上传图片", "use_knowledge_base": "false", "knowledge_limit": "5"},
+            data={
+                "prompt": "请分析上传图片",
+                "use_knowledge_base": "false",
+                "knowledge_limit": "5",
+                "save_analysis_to_knowledge_base": "true",
+                "analysis_title": "上传图片分析结果",
+            },
             files={"file": ("demo.png", b"fake-image-bytes", "image/png")},
         )
         assert response.status_code == 200
         payload = response.json()
         assert payload["image_source"] == "upload_file"
         assert "视觉分析:请分析上传图片" in payload["answer"]
+        assert payload["saved_source"] is not None
 
 
 def test_summarize_chat_endpoint_and_send(tmp_path, monkeypatch) -> None:
@@ -186,6 +249,8 @@ def test_summarize_chat_endpoint_and_send(tmp_path, monkeypatch) -> None:
                 "limit": 50,
                 "send_to_receive_id": "oc_123",
                 "send_to_receive_id_type": "chat_id",
+                "save_summary_to_knowledge_base": True,
+                "summary_title": "群聊总结结果",
             },
         )
         assert response.status_code == 200
@@ -193,6 +258,7 @@ def test_summarize_chat_endpoint_and_send(tmp_path, monkeypatch) -> None:
         assert payload["chat_id"] == "oc_123"
         assert payload["message_count"] == 2
         assert payload["sent_result"] is not None
+        assert payload["saved_source"] is not None
         assert FakeSummaryFeishuClient.last_sent_text is not None
 
 

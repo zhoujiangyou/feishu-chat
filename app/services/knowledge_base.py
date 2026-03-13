@@ -106,6 +106,25 @@ def build_chat_transcript(messages: list[dict[str, Any]]) -> tuple[str, int]:
 
 
 class KnowledgeBaseService:
+    def ingest_generated_artifact(
+        self,
+        *,
+        service_id: str,
+        title: str,
+        content: str,
+        source_type: str,
+        external_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        return self.ingest_text(
+            service_id=service_id,
+            title=title,
+            content=content,
+            source_type=source_type,
+            external_id=external_id,
+            metadata=metadata,
+        )
+
     def ingest_text(
         self,
         *,
