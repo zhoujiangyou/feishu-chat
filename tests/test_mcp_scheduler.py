@@ -26,6 +26,22 @@ class FakeScheduledApiClient:
             "receive_id_type": receive_id_type,
         }
 
+    async def summarize_feishu_chat(
+        self,
+        *,
+        service_id: str,
+        chat_id: str,
+        limit: int = 100,
+        **_: object,
+    ) -> dict[str, object]:
+        return {
+            "status": "ok",
+            "service_id": service_id,
+            "chat_id": chat_id,
+            "limit": limit,
+            "summary": "scheduled summary",
+        }
+
 
 def _build_manager(tmp_path: Path) -> ScheduledTaskManager:
     store = ScheduledTaskStore(db_path=tmp_path / "mcp-tasks.db")
@@ -102,4 +118,25 @@ async def test_mcp_scheduler_tools_use_manager(tmp_path: Path, monkeypatch) -> N
 
     run_result = await mcp_module.run_scheduled_task_now(task_id)
     assert run_result["task"]["last_status"] == "success"
+
+
+@pytest.mark.anyio
+async def test_scheduler_supports_chat_summary_action(tmp_path: Path) -> None:
+    manager = _build_manager(tmp_path)
+    task = manager.create_interval_task(
+        name="summary-reminder",
+        service_id="svc_123",
+        action_type="summarize_feishu_chat",
+        payload={
+            "chat_id": "oc_group_123",
+            "limit": 30,
+            "send_to_receive_id": "oc_group_123",
+        },
+        interval_seconds=300,
+        run_immediately=True,
+    )
+
+    executed = await manager.run_task_now(task["id"])
+    assert executed["last_status"] == "success"
+    assert executed["last_result"]["summary"] == "scheduled summary"
 # AI GC END

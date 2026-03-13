@@ -98,4 +98,24 @@ class LlmImageAnalyzeResponse(BaseModel):
     answer: str
     knowledge_results: list[dict[str, Any]]
     image_source: str
+
+
+class FeishuChatSummaryRequest(BaseModel):
+    chat_id: str = Field(min_length=3)
+    limit: int = Field(default=100, ge=1, le=500)
+    use_knowledge_base: bool = False
+    knowledge_query: str | None = None
+    knowledge_limit: int = Field(default=5, ge=1, le=20)
+    summary_prompt: str | None = None
+    system_prompt_override: str | None = None
+    send_to_receive_id: str | None = None
+    send_to_receive_id_type: Literal["chat_id", "open_id", "user_id", "union_id", "email"] = "chat_id"
+
+
+class FeishuChatSummaryResponse(BaseModel):
+    chat_id: str
+    message_count: int
+    summary: str
+    knowledge_results: list[dict[str, Any]]
+    sent_result: dict[str, Any] | None = None
 # AI GC END

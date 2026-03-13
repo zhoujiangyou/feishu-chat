@@ -37,7 +37,7 @@ mcp = FastMCP(
     instructions=(
         "This MCP server exposes Feishu Chat Service capabilities, including service creation, "
         "knowledge-base ingestion/search, OpenAI-compatible question answering and image analysis, "
-        "Feishu message sending, and internal scheduled task management."
+        "Feishu chat summarization, Feishu message sending, and internal scheduled task management."
     ),
     host=MCP_HOST,
     port=MCP_PORT,
@@ -261,6 +261,37 @@ async def analyze_image_with_llm(
         knowledge_query=knowledge_query,
         knowledge_limit=knowledge_limit,
         system_prompt_override=system_prompt_override,
+    )
+
+
+@mcp.tool(
+    name="summarize_feishu_chat",
+    description="Summarize a Feishu group chat through the configured model and optionally send the summary to a target.",
+)
+async def summarize_feishu_chat(
+    service_id: str,
+    chat_id: str,
+    limit: int = 100,
+    use_knowledge_base: bool = False,
+    knowledge_query: str | None = None,
+    knowledge_limit: int = 5,
+    summary_prompt: str | None = None,
+    system_prompt_override: str | None = None,
+    send_to_receive_id: str | None = None,
+    send_to_receive_id_type: str = "chat_id",
+) -> dict[str, Any]:
+    client = _api_client()
+    return await client.summarize_feishu_chat(
+        service_id=service_id,
+        chat_id=chat_id,
+        limit=limit,
+        use_knowledge_base=use_knowledge_base,
+        knowledge_query=knowledge_query,
+        knowledge_limit=knowledge_limit,
+        summary_prompt=summary_prompt,
+        system_prompt_override=system_prompt_override,
+        send_to_receive_id=send_to_receive_id,
+        send_to_receive_id_type=send_to_receive_id_type,
     )
 
 

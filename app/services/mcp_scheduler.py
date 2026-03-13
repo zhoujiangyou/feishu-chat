@@ -48,6 +48,20 @@ SUPPORTED_SCHEDULED_ACTIONS: dict[str, dict[str, Any]] = {
         "required_payload_fields": ["title", "content"],
         "optional_payload_fields": ["metadata"],
     },
+    "summarize_feishu_chat": {
+        "description": "Summarize a Feishu group chat and optionally send the summary to a target.",
+        "required_payload_fields": ["chat_id"],
+        "optional_payload_fields": [
+            "limit",
+            "use_knowledge_base",
+            "knowledge_query",
+            "knowledge_limit",
+            "summary_prompt",
+            "system_prompt_override",
+            "send_to_receive_id",
+            "send_to_receive_id_type",
+        ],
+    },
 }
 
 
@@ -106,6 +120,11 @@ def _validate_payload(action_type: str, payload: dict[str, Any]) -> dict[str, An
         normalized.setdefault("receive_id_type", "chat_id")
     if action_type == "import_feishu_chat":
         normalized.setdefault("limit", 100)
+    if action_type == "summarize_feishu_chat":
+        normalized.setdefault("limit", 100)
+        normalized.setdefault("use_knowledge_base", False)
+        normalized.setdefault("knowledge_limit", 5)
+        normalized.setdefault("send_to_receive_id_type", "chat_id")
     return normalized
 
 
@@ -409,5 +428,7 @@ class ScheduledTaskManager:
             return await client.import_feishu_image(service_id=task["service_id"], **payload)
         if action_type == "import_text_knowledge":
             return await client.import_text_knowledge(service_id=task["service_id"], **payload)
+        if action_type == "summarize_feishu_chat":
+            return await client.summarize_feishu_chat(service_id=task["service_id"], **payload)
         raise ScheduledTaskError(f"Unsupported scheduled action: {action_type}")
 # AI GC END

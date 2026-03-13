@@ -5,12 +5,14 @@ import base64
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request
+from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import JSONResponse
 
 from app import db
 from app.schemas import (
     FeishuChatImportRequest,
+    FeishuChatSummaryRequest,
+    FeishuChatSummaryResponse,
     FeishuDocumentImportRequest,
     FeishuImageImportRequest,
     LlmImageAnalyzeRequest,
@@ -30,7 +32,7 @@ from app.services.feishu import (
     decode_callback_body,
     extract_image_key_from_message,
 )
-from app.services.knowledge_base import KnowledgeBaseService, build_default_knowledge
+from app.services.knowledge_base import KnowledgeBaseService, build_chat_transcript, build_default_knowledge
 from app.services.llm import OpenAICompatibleLLM
 
 
@@ -255,6 +257,103 @@ async def analyze_image_with_llm(service_id: str, payload: LlmImageAnalyzeReques
         answer=answer,
         knowledge_results=knowledge,
         image_source=image_source,
+    )
+
+
+@app.post("/api/v1/services/{service_id}/llm/image-analyze/upload", response_model=LlmImageAnalyzeResponse)
+async def analyze_uploaded_image_with_llm(
+    service_id: str,
+    prompt: str = Form(...),
+    file: UploadFile = File(...),
+    use_knowledge_base: bool = Form(False),
+    knowledge_query: str | None = Form(None),
+    knowledge_limit: int = Form(5),
+    system_prompt_override: str | None = Form(None),
+) -> LlmImageAnalyzeResponse:
+    service = get_service_or_404(service_id)
+    file_bytes = await file.read()
+    if not file_bytes:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+    kb = KnowledgeBaseService()
+    resolved_knowledge_query = knowledge_query or prompt
+    knowledge = (
+        kb.search(service_id=service_id, query=resolved_knowledge_query, limit=knowledge_limit)
+        if use_knowledge_base
+        else []
+    )
+    llm = OpenAICompatibleLLM(service)
+    answer = await llm.analyze_image(
+        prompt=prompt,
+        knowledge=knowledge,
+        image_base64=base64.b64encode(file_bytes).decode("utf-8"),
+        image_mime_type=file.content_type or "application/octet-stream",
+        system_prompt_override=system_prompt_override,
+    )
+    return LlmImageAnalyzeResponse(
+        answer=answer,
+        knowledge_results=knowledge,
+        image_source="upload_file",
+    )
+
+
+@app.post("/api/v1/services/{service_id}/feishu/chats/summarize", response_model=FeishuChatSummaryResponse)
+async def summarize_feishu_chat(service_id: str, payload: FeishuChatSummaryRequest) -> FeishuChatSummaryResponse:
+    service = get_service_or_404(service_id)
+    kb = KnowledgeBaseService()
+    client = FeishuClient(service)
+    try:
+        messages = await client.list_chat_messages(chat_id=payload.chat_id, limit=payload.limit)
+        transcript, transcript_count = build_chat_transcript(messages)
+        if not transcript.strip():
+            raise HTTPException(status_code=400, detail="No usable messages found in the target chat.")
+
+        knowledge_query = payload.knowledge_query or payload.chat_id
+        knowledge = (
+            kb.search(service_id=service_id, query=knowledge_query, limit=payload.knowledge_limit)
+            if payload.use_knowledge_base
+            else []
+        )
+
+        summary_prompt = payload.summary_prompt or (
+            "请对下面的飞书群聊记录做结构化总结，输出：\n"
+            "1. 主要议题\n2. 关键结论\n3. 待办事项\n4. 风险与阻塞\n\n"
+            f"群聊记录如下：\n{transcript}"
+        )
+        llm = OpenAICompatibleLLM(service)
+        summary = await llm.answer(
+            question=summary_prompt,
+            knowledge=knowledge,
+            system_prompt_override=payload.system_prompt_override,
+        )
+
+        sent_result: dict[str, Any] | None = None
+        if payload.send_to_receive_id:
+            sent_result = await client.send_text_message(
+                receive_id=payload.send_to_receive_id,
+                text=summary,
+                receive_id_type=payload.send_to_receive_id_type,
+            )
+            db.log_conversation(
+                service_id=service_id,
+                direction="outgoing",
+                chat_id=payload.send_to_receive_id if payload.send_to_receive_id_type == "chat_id" else None,
+                user_id=payload.send_to_receive_id if payload.send_to_receive_id_type != "chat_id" else None,
+                content=summary,
+                metadata={
+                    "action": "summarize_feishu_chat",
+                    "source_chat_id": payload.chat_id,
+                    "result": sent_result,
+                },
+            )
+    finally:
+        await client.close()
+
+    return FeishuChatSummaryResponse(
+        chat_id=payload.chat_id,
+        message_count=transcript_count,
+        summary=summary,
+        knowledge_results=knowledge,
+        sent_result=sent_result,
     )
 
 

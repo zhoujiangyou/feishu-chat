@@ -135,6 +135,7 @@ MCP Server 现在内置了定时任务管理能力，可用于定时执行这些
 
 - 文本问答
 - 图像理解 / 图像问答
+- 飞书群聊总结
 
 如果你希望定时任务长期生效，建议把 MCP Server 以长期进程方式运行：
 
@@ -213,6 +214,22 @@ MCP Server 现在内置了定时任务管理能力，可用于定时执行这些
 - 飞书 `image_key`
 - 飞书 `message_id`
 
+### 10. 上传文件做图像分析
+
+`POST /api/v1/services/{service_id}/llm/image-analyze/upload`
+
+使用 `multipart/form-data` 上传图片文件。
+
+### 11. 飞书群聊总结
+
+`POST /api/v1/services/{service_id}/feishu/chats/summarize`
+
+可用于：
+
+- 拉取指定群最近 N 条消息
+- 调用大模型总结
+- 可选把总结直接回发到某个群或个人
+
 ## 推荐飞书权限
 
 至少需要关注这些权限（不同租户控制台命名可能略有差异）：
@@ -238,6 +255,8 @@ MCP Server 现在内置了定时任务管理能力，可用于定时执行这些
 - 知识库导入
 - 检索增强回答
 - 文档 / 群聊 / 图片抓取
+- 图像理解 OpenAPI
+- 飞书群聊总结
 
 但仍建议后续补充：
 

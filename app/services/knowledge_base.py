@@ -84,6 +84,27 @@ def _collect_text_fragments(value: Any, sink: list[str]) -> None:
             _collect_text_fragments(item, sink)
 
 
+def build_chat_transcript(messages: list[dict[str, Any]]) -> tuple[str, int]:
+    lines: list[str] = []
+    for message in messages:
+        text = extract_text_from_message(message)
+        if not text and message.get("message_type") == "image":
+            image_key = extract_image_key_from_message(message)
+            text = f"[image] image_key={image_key}" if image_key else "[image]"
+        if not text:
+            continue
+        sender = (
+            message.get("sender", {})
+            .get("sender_id", {})
+            .get("open_id")
+            or message.get("sender", {}).get("name")
+            or "unknown"
+        )
+        created_at = message.get("create_time", "")
+        lines.append(f"[{created_at}] {sender}: {text}")
+    return "\n".join(lines), len(lines)
+
+
 class KnowledgeBaseService:
     def ingest_text(
         self,
@@ -149,32 +170,14 @@ class KnowledgeBaseService:
         limit: int,
     ) -> dict[str, Any]:
         messages = await client.list_chat_messages(chat_id=chat_id, limit=limit)
-        lines: list[str] = []
-        for message in messages:
-            text = extract_text_from_message(message)
-            if not text and message.get("message_type") == "image":
-                image_key = extract_image_key_from_message(message)
-                text = f"[image] image_key={image_key}" if image_key else "[image]"
-            if not text:
-                continue
-            sender = (
-                message.get("sender", {})
-                .get("sender_id", {})
-                .get("open_id")
-                or message.get("sender", {}).get("name")
-                or "unknown"
-            )
-            created_at = message.get("create_time", "")
-            lines.append(f"[{created_at}] {sender}: {text}")
-
-        content = "\n".join(lines)
+        content, line_count = build_chat_transcript(messages)
         return self.ingest_text(
             service_id=service_id,
             title=f"Feishu Chat {chat_id}",
             content=content,
             source_type="feishu_chat",
             external_id=chat_id,
-            metadata={"chat_id": chat_id, "message_count": len(messages)},
+            metadata={"chat_id": chat_id, "message_count": len(messages), "line_count": line_count},
         )
 
     async def import_feishu_image(

@@ -216,4 +216,34 @@ class FeishuChatServiceApiClient:
                 "system_prompt_override": system_prompt_override,
             },
         )
+
+    async def summarize_feishu_chat(
+        self,
+        *,
+        service_id: str,
+        chat_id: str,
+        limit: int = 100,
+        use_knowledge_base: bool = False,
+        knowledge_query: str | None = None,
+        knowledge_limit: int = 5,
+        summary_prompt: str | None = None,
+        system_prompt_override: str | None = None,
+        send_to_receive_id: str | None = None,
+        send_to_receive_id_type: str = "chat_id",
+    ) -> dict[str, Any]:
+        return await self._request(
+            "POST",
+            f"/api/v1/services/{service_id}/feishu/chats/summarize",
+            json={
+                "chat_id": chat_id,
+                "limit": limit,
+                "use_knowledge_base": use_knowledge_base,
+                "knowledge_query": knowledge_query,
+                "knowledge_limit": knowledge_limit,
+                "summary_prompt": summary_prompt,
+                "system_prompt_override": system_prompt_override,
+                "send_to_receive_id": send_to_receive_id,
+                "send_to_receive_id_type": send_to_receive_id_type,
+            },
+        )
 # AI GC END

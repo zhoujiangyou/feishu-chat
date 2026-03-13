@@ -1,12 +1,13 @@
 # AI GC START
 from __future__ import annotations
 
+import base64
 import re
 from dataclasses import dataclass
 from typing import Any
 
 from app import db
-from app.services.feishu import FeishuClient, extract_text_from_message, sanitize_user_text
+from app.services.feishu import FeishuClient, extract_image_key_from_message, extract_text_from_message, sanitize_user_text
 from app.services.knowledge_base import KnowledgeBaseService
 from app.services.llm import OpenAICompatibleLLM
 
@@ -19,6 +20,7 @@ HELP_TEXT = (
     "4. /kb doc <文档链接或token>\n"
     "5. /kb chat <chat_id> [limit]\n"
     "6. /kb image <image_key或message_id>\n"
+    "7. 直接发送图片，机器人会自动做视觉分析并回复。\n"
     "普通文本会自动走知识库检索 + 大模型回答。"
 )
 
@@ -92,7 +94,22 @@ async def handle_event(service: dict[str, Any], payload: dict[str, Any]) -> dict
                 message_id=message_id,
                 title=f"Image from {chat_id or 'chat'}",
             )
-            reply = f"图片已抓取并入库：{source['title']}"
+            image_key = extract_image_key_from_message(message)
+            image_reply = ""
+            if image_key:
+                image_bytes, mime_type = await client.download_image(image_key)
+                llm = OpenAICompatibleLLM(service)
+                image_reply = await llm.analyze_image(
+                    prompt="请用简洁中文描述这张图片的主要内容，并指出可见的关键信息或风险。",
+                    knowledge=[],
+                    image_base64=base64.b64encode(image_bytes).decode("utf-8"),
+                    image_mime_type=mime_type or "image/png",
+                )
+            reply = (
+                f"图片已抓取并入库：{source['title']}\n\n图片分析：{image_reply}"
+                if image_reply
+                else f"图片已抓取并入库：{source['title']}"
+            )
             await client.reply_text_message(message_id=message_id, text=reply)
             db.log_conversation(
                 service_id=service["id"],
@@ -101,6 +118,7 @@ async def handle_event(service: dict[str, Any], payload: dict[str, Any]) -> dict
                 message_id=message_id,
                 user_id=user_id,
                 content=reply,
+                metadata={"source_id": source["id"], "image_analyzed": bool(image_reply)},
             )
             return {"status": "ingested_image", "source_id": source["id"]}
 
