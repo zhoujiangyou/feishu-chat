@@ -1,0 +1,11 @@
+# AI GC START
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+.env
+data/
+dist/
+build/
+*.egg-info/
+# AI GC END

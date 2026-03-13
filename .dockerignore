@@ -1,0 +1,12 @@
+# AI GC START
+.git
+.venv
+__pycache__
+.pytest_cache
+data
+*.pyc
+*.pyo
+*.pyd
+*.db
+.env
+# AI GC END
