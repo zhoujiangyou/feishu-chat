@@ -259,6 +259,7 @@ MCP Server 现在内置了定时任务管理能力，可用于定时执行这些
 - 飞书开放平台接入：`docs/feishu-open-platform.md`
 - 本地部署逐步验收手册：`docs/local-deployment-acceptance.md`
 - MCP 集成指南：`docs/mcp-integration.md`
+- 闭环自主 Agent 架构设计：`docs/agent-runtime-architecture.md`
 - 生产部署指南：`docs/production-deployment.md`
 
 ## 当前边界说明
