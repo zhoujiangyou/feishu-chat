@@ -62,8 +62,10 @@ class VerificationResult(BaseModel):
     should_retry: bool = False
     should_replan: bool = False
     should_abort: bool = False
+    should_wait_for_input: bool = False
     verifier_summary: str
     final_answer: str | None = None
+    ask_user_message: str | None = None
 
 
 class AgentSession(BaseModel):

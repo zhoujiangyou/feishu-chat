@@ -54,6 +54,20 @@ class FakeSendPlanner:
         )
 
 
+class FakeMissingContextPlanner:
+    async def decide_next_action(self, session, working_context, available_tools):  # type: ignore[no-untyped-def]
+        return PlanDecision(
+            action_type="tool_call",
+            reasoning_summary="尝试总结当前群。",
+            updated_plan=["总结群聊"],
+            next_tool_call=ToolCall(
+                tool_name="summarize_feishu_chat",
+                arguments={},
+                rationale="test missing context",
+            ),
+        )
+
+
 class FakeToolBridge:
     def list_available_tools(self, session):  # type: ignore[no-untyped-def]
         return [
@@ -100,6 +114,20 @@ class FakeToolBridge:
                 created_at=db.utcnow(),
             )
         raise ValueError(call.tool_name)
+
+
+class FakeFailingToolBridge(FakeToolBridge):
+    async def execute(self, session, call, step_index):  # type: ignore[no-untyped-def]
+        return Observation(
+            step_index=step_index,
+            tool_name=call.tool_name,
+            arguments=call.arguments,
+            success=False,
+            result=None,
+            error="Current chat_id is missing for summarize_current_chat.",
+            summary="failed",
+            created_at=db.utcnow(),
+        )
 
 
 def _create_service() -> dict[str, str]:
@@ -167,4 +195,28 @@ async def test_agent_runtime_fails_when_policy_denies_side_effect(tmp_path) -> N
 
     assert result.session.status == "failed"
     assert "send_feishu_message" in (result.session.failure_reason or "")
+
+
+@pytest.mark.anyio
+async def test_agent_runtime_switches_to_waiting_input_on_missing_context(tmp_path) -> None:
+    db.DB_PATH = tmp_path / "agent-waiting.db"
+    service = _create_service()
+    runtime = AgentRuntime(
+        session_store=AgentSessionStore(),
+        planner=FakeMissingContextPlanner(),
+        verifier=AgentVerifier(),
+        tool_bridge=FakeFailingToolBridge(),
+        policy=AgentExecutionPolicy(),
+    )
+
+    result = await runtime.run(
+        service_id=service["id"],
+        goal="请总结当前群",
+        context={},
+        constraints={"max_steps": 2},
+        policy_config={},
+    )
+
+    assert result.session.status == "waiting_input"
+    assert "pending_user_prompt" in result.session.working_memory
 # AI GC END

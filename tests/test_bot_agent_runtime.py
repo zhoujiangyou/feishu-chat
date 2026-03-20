@@ -71,6 +71,28 @@ class FakeFallbackLLM:
         return f"fallback:{question}|kb={len(knowledge)}"
 
 
+class FakeWaitingRuntime:
+    async def run(self, *, service_id: str, goal: str, context: dict, constraints: dict, policy_config: dict):  # type: ignore[no-untyped-def]
+        session = AgentSession(
+            id="sess_wait_123",
+            service_id=service_id,
+            goal=goal,
+            status="waiting_input",
+            step_count=1,
+            max_steps=constraints["max_steps"],
+            context=context,
+            constraints=constraints,
+            policy_config=policy_config,
+            current_plan=["获取更多上下文"],
+            working_memory={"pending_user_prompt": "请补充 chat_id 或直接在目标群里发起请求。"},
+            final_answer=None,
+            failure_reason=None,
+            created_at=db.utcnow(),
+            updated_at=db.utcnow(),
+        )
+        return AgentRunResult(session=session, logs=[])
+
+
 def _create_service() -> dict[str, str]:
     db.init_db()
     return db.create_service(
@@ -157,4 +179,20 @@ async def test_bot_text_message_falls_back_to_llm_when_agent_runtime_fails(tmp_p
     assert result["status"] == "answered_fallback"
     assert result["reply_mode"] == "reply_text_message"
     assert FakeBotAgentFeishuClient.last_reply == "fallback:机器人现在可以做什么|kb=0"
+
+
+@pytest.mark.anyio
+async def test_bot_text_message_replies_with_waiting_prompt_when_agent_needs_more_context(tmp_path, monkeypatch) -> None:
+    db.DB_PATH = tmp_path / "bot-agent-waiting.db"
+    service = _create_service()
+    FakeBotAgentFeishuClient.last_reply = None
+
+    monkeypatch.setattr(bot_module, "FeishuClient", FakeBotAgentFeishuClient)
+    monkeypatch.setattr(bot_module, "get_bot_agent_runtime", lambda: FakeWaitingRuntime())
+
+    result = await bot_module.handle_event(service, _build_payload("请总结另一个群的重点"))
+
+    assert result["status"] == "agent_waiting_input"
+    assert result["reply_mode"] == "reply_text_message"
+    assert FakeBotAgentFeishuClient.last_reply == "请补充 chat_id 或直接在目标群里发起请求。"
 # AI GC END

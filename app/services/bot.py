@@ -378,7 +378,7 @@ def _build_agent_message_result(result: AgentRunResult) -> AgentMessageResult:
         return AgentMessageResult(
             status="agent_waiting_input",
             session_id=session.id,
-            reply_text=_extract_agent_waiting_prompt(result.logs),
+            reply_text=str(session.working_memory.get("pending_user_prompt") or _extract_agent_waiting_prompt(result.logs)),
             metadata=metadata,
         )
 
@@ -417,6 +417,10 @@ def _extract_agent_waiting_prompt(step_logs: list[AgentStepLog]) -> str:
         ask_user_message = plan_decision.get("ask_user_message")
         if ask_user_message:
             return str(ask_user_message)
+        verification = step_logs[-1].verification or {}
+        verification_prompt = verification.get("ask_user_message")
+        if verification_prompt:
+            return str(verification_prompt)
     return "还需要更多信息才能继续执行，请补充上下文。"
 
 

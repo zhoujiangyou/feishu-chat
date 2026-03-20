@@ -1,6 +1,7 @@
 # AI GC START
 from __future__ import annotations
 
+from app import db
 from app.agent.exceptions import AgentRuntimeError, PolicyDeniedError
 from app.agent.memory import AgentMemoryManager
 from app.agent.planner import AgentPlanner
@@ -85,7 +86,7 @@ class AgentRuntime:
                     plan_decision=decision.model_dump(),
                     observation=None,
                     verification=None,
-                    created_at=session.updated_at,
+                    created_at=db.utcnow(),
                 )
 
                 if decision.action_type == "finish":
@@ -97,6 +98,7 @@ class AgentRuntime:
                     return self._finalize(session)
 
                 if decision.action_type == "ask_user":
+                    session.working_memory["pending_user_prompt"] = decision.ask_user_message or decision.reasoning_summary
                     session.status = "waiting_input"
                     session = self.session_store.update_session(session)
                     self.session_store.append_step_log(step_log)
@@ -130,16 +132,32 @@ class AgentRuntime:
                 session.step_count += 1
 
                 if verification.goal_completed:
+                    session.working_memory.pop("pending_user_prompt", None)
                     session = self.session_store.mark_completed(
                         session,
                         verification.final_answer or self._build_final_answer(session, observation),
                     )
                     return self._finalize(session)
 
+                if verification.should_wait_for_input:
+                    session.working_memory["pending_user_prompt"] = (
+                        verification.ask_user_message or verification.verifier_summary
+                    )
+                    session.status = "waiting_input"
+                    session = self.session_store.update_session(session)
+                    return AgentRunResult(session=session, logs=self.session_store.list_step_logs(session.id))
+
+                if verification.should_retry and decision.next_tool_call:
+                    session.working_memory["retry_pending_call"] = decision.next_tool_call.model_dump()
+                    session.working_memory["retry_reason"] = verification.verifier_summary
+                    session = self.session_store.update_session(session)
+                    continue
+
                 if verification.should_abort:
                     session = self.session_store.mark_failed(session, verification.verifier_summary)
                     return AgentRunResult(session=session, logs=self.session_store.list_step_logs(session.id))
 
+                session.working_memory.pop("pending_user_prompt", None)
                 session = self.session_store.update_session(session)
 
             session = self.session_store.mark_failed(session, "Session exceeded max_steps without completion.")
