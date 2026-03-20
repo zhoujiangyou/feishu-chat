@@ -9,6 +9,7 @@ from app import db
 from app.agent.exceptions import PlanningError
 from app.agent.prompts import build_planner_system_prompt, build_planner_user_prompt
 from app.agent.subgoal_planner import SubgoalPlanner
+from app.agent.subgoal_state_manager import SubgoalStateManager
 from app.agent.task_classifier import TaskClassifier
 from app.agent.types import (
     AgentSession,
@@ -29,9 +30,11 @@ class AgentPlanner:
         *,
         task_classifier: TaskClassifier | None = None,
         subgoal_planner: SubgoalPlanner | None = None,
+        subgoal_state_manager: SubgoalStateManager | None = None,
     ) -> None:
         self.task_classifier = task_classifier or TaskClassifier()
         self.subgoal_planner = subgoal_planner or SubgoalPlanner()
+        self.subgoal_state_manager = subgoal_state_manager or SubgoalStateManager()
 
     async def decide_next_action(
         self,
@@ -40,7 +43,8 @@ class AgentPlanner:
         available_tools: list[ToolSpec],
     ) -> PlanDecision:
         classification = self.task_classifier.classify(session, working_context, available_tools)
-        subgoal_plan = self.subgoal_planner.build_plan(session, classification, working_context, available_tools)
+        template_plan = self.subgoal_planner.build_plan(session, classification, working_context, available_tools)
+        subgoal_plan = self.subgoal_state_manager.refresh_plan(session, template_plan, working_context.subgoal_plan)
         working_context.task_classification = classification
         working_context.subgoal_plan = subgoal_plan
         self._persist_planning_state(session, classification, subgoal_plan)

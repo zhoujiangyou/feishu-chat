@@ -4,9 +4,11 @@ from __future__ import annotations
 from app import db
 from app.agent.exceptions import AgentRuntimeError, PolicyDeniedError
 from app.agent.memory import AgentMemoryManager
+from app.agent.parameter_extractor import ParameterExtractor
 from app.agent.planner import AgentPlanner
 from app.agent.policy import AgentExecutionPolicy
 from app.agent.session_store import AgentSessionStore
+from app.agent.subgoal_state_manager import SubgoalStateManager
 from app.agent.tool_bridge import AgentToolBridge
 from app.agent.types import AgentRunResult, AgentSession, AgentStepLog, Observation
 from app.agent.verifier import AgentVerifier
@@ -22,6 +24,8 @@ class AgentRuntime:
         tool_bridge: AgentToolBridge | None = None,
         memory_manager: AgentMemoryManager | None = None,
         policy: AgentExecutionPolicy | None = None,
+        parameter_extractor: ParameterExtractor | None = None,
+        subgoal_state_manager: SubgoalStateManager | None = None,
     ) -> None:
         self.session_store = session_store or AgentSessionStore()
         self.planner = planner or AgentPlanner()
@@ -29,6 +33,8 @@ class AgentRuntime:
         self.tool_bridge = tool_bridge or AgentToolBridge()
         self.memory_manager = memory_manager or AgentMemoryManager()
         self.policy = policy or AgentExecutionPolicy()
+        self.parameter_extractor = parameter_extractor or ParameterExtractor()
+        self.subgoal_state_manager = subgoal_state_manager or SubgoalStateManager()
 
     async def run(
         self,
@@ -39,11 +45,16 @@ class AgentRuntime:
         constraints: dict | None = None,
         policy_config: dict | None = None,
     ) -> AgentRunResult:
-        session = self.session_store.create_session(
-            service_id=service_id,
+        extracted_context, extracted_constraints = self.parameter_extractor.extract(
             goal=goal,
             context=context or {},
             constraints=constraints or {},
+        )
+        session = self.session_store.create_session(
+            service_id=service_id,
+            goal=goal,
+            context=extracted_context,
+            constraints=extracted_constraints,
             policy_config=policy_config or {},
         )
         return await self._run_session(session.id)
@@ -130,6 +141,11 @@ class AgentRuntime:
                 self.session_store.append_step_log(step_log)
 
                 session = self.memory_manager.merge_observation(session, observation)
+                session = self.subgoal_state_manager.advance_after_step(
+                    session,
+                    observation=observation,
+                    verification=verification,
+                )
                 session.step_count += 1
 
                 if verification.goal_completed:
