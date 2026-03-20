@@ -17,6 +17,8 @@ AgentStatus = Literal[
 ]
 
 ActionType = Literal["tool_call", "finish", "ask_user", "wait", "fail"]
+TaskType = Literal["knowledge_qa", "chat_summary", "knowledge_ingestion", "image_analysis", "message_send", "unknown"]
+SubgoalStatus = Literal["pending", "active", "completed", "blocked"]
 
 
 class ToolSpec(BaseModel):
@@ -62,8 +64,36 @@ class VerificationResult(BaseModel):
     should_retry: bool = False
     should_replan: bool = False
     should_abort: bool = False
+    should_wait_for_input: bool = False
     verifier_summary: str
     final_answer: str | None = None
+    ask_user_message: str | None = None
+
+
+class TaskClassification(BaseModel):
+    task_type: TaskType
+    summary: str
+    confidence: float = 0.0
+    secondary_intents: list[str] = Field(default_factory=list)
+    required_context: list[str] = Field(default_factory=list)
+    preferred_tool_sequence: list[str] = Field(default_factory=list)
+
+
+class SubgoalItem(BaseModel):
+    id: str
+    title: str
+    description: str
+    status: SubgoalStatus = "pending"
+    preferred_tool: str | None = None
+    ask_user_message: str | None = None
+    completion_hint: str | None = None
+
+
+class SubgoalPlan(BaseModel):
+    task_type: TaskType
+    summary: str
+    items: list[SubgoalItem] = Field(default_factory=list)
+    active_subgoal_id: str | None = None
 
 
 class AgentSession(BaseModel):
@@ -97,6 +127,8 @@ class WorkingContext(BaseModel):
     knowledge_results: list[dict[str, Any]] = Field(default_factory=list)
     recent_observations: list[dict[str, Any]] = Field(default_factory=list)
     working_memory: dict[str, Any] = Field(default_factory=dict)
+    task_classification: TaskClassification | None = None
+    subgoal_plan: SubgoalPlan | None = None
 
 
 class AgentRunResult(BaseModel):

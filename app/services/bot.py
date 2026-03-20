@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from app import db
+from app.agent import AgentRuntime
+from app.agent.types import AgentRunResult, AgentStepLog
 from app.services.feishu import FeishuClient, extract_image_key_from_message, extract_text_from_message, sanitize_user_text
 from app.services.knowledge_base import KnowledgeBaseService, build_chat_transcript
 from app.services.llm import OpenAICompatibleLLM
@@ -23,7 +25,7 @@ HELP_TEXT = (
     "7. /kb chat <chat_id> [limit]\n"
     "8. /kb image <image_key或message_id>\n"
     "9. 直接发送图片，机器人会自动做视觉分析并回复，并把分析结果写回知识库。\n"
-    "普通文本会自动走知识库检索 + 大模型回答。"
+    "普通文本会自动走闭环 Agent，优先检索知识库并按需调用工具。"
 )
 
 
@@ -32,6 +34,15 @@ class BotCommand:
     name: str
     value: str | None = None
     limit: int | None = None
+
+
+@dataclass(slots=True)
+class AgentMessageResult:
+    status: str
+    session_id: str | None = None
+    reply_text: str | None = None
+    skip_direct_reply: bool = False
+    metadata: dict[str, Any] | None = None
 
 
 def parse_bot_command(text: str) -> BotCommand | None:
@@ -61,6 +72,10 @@ def parse_bot_command(text: str) -> BotCommand | None:
             limit = int(match.group(2)) if match.lastindex and match.lastindex >= 2 and match.group(2) else None
         return BotCommand(name=name, value=value, limit=limit)
     return None
+
+
+def get_bot_agent_runtime() -> AgentRuntime:
+    return AgentRuntime()
 
 
 async def handle_event(service: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
@@ -160,20 +175,31 @@ async def handle_event(service: dict[str, Any], payload: dict[str, Any]) -> dict
             return {"status": "command_executed", "command": command.name}
 
         query = sanitize_user_text(user_text)
-        knowledge = kb.search(service_id=service["id"], query=query, limit=5) if query else []
-        llm = OpenAICompatibleLLM(service)
-        answer = await llm.answer(question=query or "请说明收到的消息内容。", knowledge=knowledge)
-        await client.reply_text_message(message_id=message_id, text=answer)
-        db.log_conversation(
-            service_id=service["id"],
-            direction="outgoing",
+        agent_result = await _handle_agent_message(
+            service=service,
+            client=client,
+            kb=kb,
+            query=query or "请说明收到的消息内容。",
             chat_id=chat_id,
             message_id=message_id,
             user_id=user_id,
-            content=answer,
-            metadata={"knowledge_count": len(knowledge)},
         )
-        return {"status": "answered", "knowledge_count": len(knowledge)}
+        if agent_result.reply_text and not agent_result.skip_direct_reply:
+            await client.reply_text_message(message_id=message_id, text=agent_result.reply_text)
+            db.log_conversation(
+                service_id=service["id"],
+                direction="outgoing",
+                chat_id=chat_id,
+                message_id=message_id,
+                user_id=user_id,
+                content=agent_result.reply_text,
+                metadata=agent_result.metadata or {},
+            )
+        return {
+            "status": agent_result.status,
+            "session_id": agent_result.session_id,
+            "reply_mode": "agent_send_message" if agent_result.skip_direct_reply else "reply_text_message",
+        }
     finally:
         await client.close()
 
@@ -287,4 +313,125 @@ async def _summarize_current_chat(
         metadata={"chat_id": chat_id, "limit": limit, "message_count": transcript_count},
     )
     return summary
+
+
+async def _handle_agent_message(
+    *,
+    service: dict[str, Any],
+    client: FeishuClient,
+    kb: KnowledgeBaseService,
+    query: str,
+    chat_id: str | None,
+    message_id: str,
+    user_id: str | None,
+) -> AgentMessageResult:
+    try:
+        runtime = get_bot_agent_runtime()
+        result = await runtime.run(
+            service_id=service["id"],
+            goal=query,
+            context={
+                "chat_id": chat_id,
+                "message_id": message_id,
+                "user_id": user_id,
+                "receive_id": chat_id,
+                "receive_id_type": "chat_id",
+            },
+            constraints={"max_steps": 6, "knowledge_limit": 5, "chat_limit": 100},
+            policy_config={"allow_send_feishu_message": True, "persist_agent_episode": True},
+        )
+        return _build_agent_message_result(result)
+    except Exception as exc:
+        answer, knowledge_count = await _answer_with_retrieval_fallback(service=service, kb=kb, query=query)
+        return AgentMessageResult(
+            status="answered_fallback",
+            reply_text=answer,
+            metadata={"knowledge_count": knowledge_count, "fallback_reason": str(exc)},
+        )
+
+
+def _build_agent_message_result(result: AgentRunResult) -> AgentMessageResult:
+    session = result.session
+    metadata = {
+        "agent_session_id": session.id,
+        "agent_status": session.status,
+        "agent_step_count": session.step_count,
+    }
+    if session.status == "completed":
+        final_answer = _resolve_agent_final_answer(result)
+        if session.working_memory.get("message_sent"):
+            return AgentMessageResult(
+                status="agent_completed",
+                session_id=session.id,
+                reply_text=final_answer,
+                skip_direct_reply=True,
+                metadata={**metadata, "reply_mode": "agent_send_message"},
+            )
+        return AgentMessageResult(
+            status="agent_completed",
+            session_id=session.id,
+            reply_text=final_answer,
+            metadata={**metadata, "reply_mode": "reply_text_message"},
+        )
+
+    if session.status == "waiting_input":
+        return AgentMessageResult(
+            status="agent_waiting_input",
+            session_id=session.id,
+            reply_text=str(session.working_memory.get("pending_user_prompt") or _extract_agent_waiting_prompt(result.logs)),
+            metadata=metadata,
+        )
+
+    if session.status == "paused":
+        return AgentMessageResult(
+            status="agent_paused",
+            session_id=session.id,
+            reply_text="当前任务已暂停，请补充更多上下文后重试。",
+            metadata=metadata,
+        )
+
+    return AgentMessageResult(
+        status="agent_failed",
+        session_id=session.id,
+        reply_text=session.failure_reason or "当前任务执行失败，请稍后重试。",
+        metadata=metadata,
+    )
+
+
+def _resolve_agent_final_answer(result: AgentRunResult) -> str:
+    session = result.session
+    if session.final_answer:
+        return session.final_answer
+    if session.working_memory.get("latest_summary"):
+        return str(session.working_memory["latest_summary"])
+    if session.working_memory.get("latest_answer"):
+        return str(session.working_memory["latest_answer"])
+    if result.logs and result.logs[-1].observation:
+        return str(result.logs[-1].observation.get("summary") or "任务已完成。")
+    return "任务已完成。"
+
+
+def _extract_agent_waiting_prompt(step_logs: list[AgentStepLog]) -> str:
+    if step_logs:
+        plan_decision = step_logs[-1].plan_decision
+        ask_user_message = plan_decision.get("ask_user_message")
+        if ask_user_message:
+            return str(ask_user_message)
+        verification = step_logs[-1].verification or {}
+        verification_prompt = verification.get("ask_user_message")
+        if verification_prompt:
+            return str(verification_prompt)
+    return "还需要更多信息才能继续执行，请补充上下文。"
+
+
+async def _answer_with_retrieval_fallback(
+    *,
+    service: dict[str, Any],
+    kb: KnowledgeBaseService,
+    query: str,
+) -> tuple[str, int]:
+    knowledge = kb.search(service_id=service["id"], query=query, limit=5) if query else []
+    llm = OpenAICompatibleLLM(service)
+    answer = await llm.answer(question=query or "请说明收到的消息内容。", knowledge=knowledge)
+    return answer, len(knowledge)
 # AI GC END

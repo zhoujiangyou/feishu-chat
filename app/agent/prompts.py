@@ -26,8 +26,10 @@ VERIFIER_OUTPUT_EXAMPLE = {
     "should_retry": False,
     "should_replan": True,
     "should_abort": False,
+    "should_wait_for_input": False,
     "verifier_summary": "当前步骤成功，但距离目标仍差后续执行动作。",
     "final_answer": None,
+    "ask_user_message": None,
 }
 
 
@@ -67,6 +69,10 @@ def build_planner_user_prompt(
         "policy_config": session.policy_config,
         "current_plan": session.current_plan,
         "working_memory": session.working_memory,
+        "task_classification": (
+            working_context.task_classification.model_dump() if working_context.task_classification else None
+        ),
+        "subgoal_plan": working_context.subgoal_plan.model_dump() if working_context.subgoal_plan else None,
         "knowledge_results": working_context.knowledge_results,
         "recent_observations": working_context.recent_observations,
         "available_tools": _tool_descriptions(available_tools),
@@ -82,6 +88,7 @@ def build_verifier_system_prompt() -> str:
     return (
         "你是当前服务内部的闭环自主 Agent Verifier。"
         "你的任务是根据用户目标、当前 observation 和 working memory，判断这一步是否真正推进了目标。"
+        "如果缺少必要上下文，应设置 should_wait_for_input=true 并给出 ask_user_message。"
         "请严格输出 JSON。"
     )
 

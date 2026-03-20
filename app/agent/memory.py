@@ -1,7 +1,7 @@
 # AI GC START
 from __future__ import annotations
 
-from app.agent.types import AgentSession, AgentStepLog, Observation, WorkingContext
+from app.agent.types import AgentSession, AgentStepLog, Observation, SubgoalPlan, TaskClassification, WorkingContext
 from app.services.knowledge_base import KnowledgeBaseService
 
 
@@ -21,18 +21,47 @@ class AgentMemoryManager:
         session: AgentSession,
         recent_observations: list[Observation],
     ) -> WorkingContext:
+        task_classification = None
+        subgoal_plan = None
+        if session.working_memory.get("task_classification"):
+            task_classification = TaskClassification.model_validate(session.working_memory["task_classification"])
+        if session.working_memory.get("subgoal_plan"):
+            subgoal_plan = SubgoalPlan.model_validate(session.working_memory["subgoal_plan"])
         return WorkingContext(
             knowledge_results=self.retrieve_goal_knowledge(session),
             recent_observations=[item.model_dump() for item in recent_observations[-5:]],
             working_memory=dict(session.working_memory),
+            task_classification=task_classification,
+            subgoal_plan=subgoal_plan,
         )
 
     def merge_observation(self, session: AgentSession, observation: Observation) -> AgentSession:
         working_memory = dict(session.working_memory)
+        tool_history = list(working_memory.get("tool_history") or [])
+        tool_history.append(
+            {
+                "tool_name": observation.tool_name,
+                "success": observation.success,
+                "error": observation.error,
+                "step_index": observation.step_index,
+            }
+        )
+        working_memory["tool_history"] = tool_history[-10:]
         working_memory["last_tool_name"] = observation.tool_name
         working_memory["last_tool_success"] = observation.success
         working_memory["last_tool_summary"] = observation.summary
         working_memory["last_tool_result"] = observation.result
+        working_memory["last_error"] = observation.error
+
+        failure_counts = dict(working_memory.get("tool_failure_counts") or {})
+        success_counts = dict(working_memory.get("tool_success_counts") or {})
+        if observation.success:
+            success_counts[observation.tool_name] = int(success_counts.get(observation.tool_name, 0)) + 1
+            failure_counts.setdefault(observation.tool_name, 0)
+        else:
+            failure_counts[observation.tool_name] = int(failure_counts.get(observation.tool_name, 0)) + 1
+        working_memory["tool_failure_counts"] = failure_counts
+        working_memory["tool_success_counts"] = success_counts
 
         if observation.tool_name == "ask_llm_question" and observation.result:
             answer = observation.result.get("answer")
@@ -49,6 +78,11 @@ class AgentMemoryManager:
             if summary:
                 working_memory["latest_summary"] = summary
 
+        if observation.tool_name == "search_knowledge":
+            working_memory["latest_knowledge_query"] = observation.arguments.get("query")
+            if observation.result:
+                working_memory["latest_knowledge_count"] = len(observation.result.get("results", []))
+
         if observation.tool_name.startswith("import_feishu_") and observation.result:
             source = observation.result.get("source")
             if source:
@@ -58,6 +92,19 @@ class AgentMemoryManager:
             working_memory["message_sent"] = True
             if observation.result:
                 working_memory["send_result"] = observation.result
+
+        retry_attempts = dict(working_memory.get("retry_attempt_counts") or {})
+        if observation.success:
+            retry_attempts.pop(observation.tool_name, None)
+            if (
+                working_memory.get("retry_pending_call")
+                and (working_memory["retry_pending_call"] or {}).get("tool_name") == observation.tool_name
+            ):
+                working_memory.pop("retry_pending_call", None)
+                working_memory.pop("retry_reason", None)
+        else:
+            retry_attempts[observation.tool_name] = int(retry_attempts.get(observation.tool_name, 0)) + 1
+        working_memory["retry_attempt_counts"] = retry_attempts
 
         session.working_memory = working_memory
         return session
