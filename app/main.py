@@ -9,7 +9,14 @@ from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, Query, 
 from fastapi.responses import JSONResponse
 
 from app import db
+from app.agent import AgentRuntime
+from app.agent.types import AgentRunResult, AgentSession, AgentStepLog
 from app.schemas import (
+    AgentCancelResponse,
+    AgentRunRequest,
+    AgentRunResponse,
+    AgentSessionLogResponse,
+    AgentSessionResponse,
     FeishuChatImportRequest,
     FeishuChatSummaryRequest,
     FeishuChatSummaryResponse,
@@ -50,6 +57,41 @@ def get_service_or_404(service_id: str) -> dict[str, Any]:
     if not service:
         raise HTTPException(status_code=404, detail="Service not found.")
     return service
+
+
+def get_agent_runtime() -> AgentRuntime:
+    return AgentRuntime()
+
+
+def _build_agent_session_response(session: AgentSession) -> AgentSessionResponse:
+    return AgentSessionResponse(
+        session_id=session.id,
+        service_id=session.service_id,
+        goal=session.goal,
+        status=session.status,
+        step_count=session.step_count,
+        max_steps=session.max_steps,
+        context=session.context,
+        constraints=session.constraints,
+        policy_config=session.policy_config,
+        current_plan=session.current_plan,
+        working_memory=session.working_memory,
+        final_answer=session.final_answer,
+        failure_reason=session.failure_reason,
+        created_at=session.created_at,
+        updated_at=session.updated_at,
+    )
+
+
+def _build_agent_run_response(result: AgentRunResult) -> AgentRunResponse:
+    return AgentRunResponse(
+        session=_build_agent_session_response(result.session),
+        logs=[_serialize_agent_step_log(item) for item in result.logs],
+    )
+
+
+def _serialize_agent_step_log(step_log: AgentStepLog) -> dict[str, Any]:
+    return step_log.model_dump()
 
 
 async def process_event_async(service_id: str, payload: dict[str, Any]) -> None:
@@ -426,6 +468,65 @@ async def list_sources(service_id: str) -> dict[str, Any]:
     get_service_or_404(service_id)
     kb = KnowledgeBaseService()
     return {"items": kb.list_sources(service_id=service_id)}
+
+
+@app.post("/api/v1/services/{service_id}/agent/run", response_model=AgentRunResponse)
+async def run_agent(service_id: str, payload: AgentRunRequest) -> AgentRunResponse:
+    get_service_or_404(service_id)
+    runtime = get_agent_runtime()
+    result = await runtime.run(
+        service_id=service_id,
+        goal=payload.goal,
+        context=payload.context,
+        constraints=payload.constraints,
+        policy_config=payload.policy_config,
+    )
+    return _build_agent_run_response(result)
+
+
+@app.get("/api/v1/services/{service_id}/agent/sessions/{session_id}", response_model=AgentSessionResponse)
+async def get_agent_session(service_id: str, session_id: str) -> AgentSessionResponse:
+    get_service_or_404(service_id)
+    runtime = get_agent_runtime()
+    session = runtime.get_session(session_id)
+    if session.service_id != service_id:
+        raise HTTPException(status_code=404, detail="Agent session not found.")
+    return _build_agent_session_response(session)
+
+
+@app.get("/api/v1/services/{service_id}/agent/sessions/{session_id}/logs", response_model=AgentSessionLogResponse)
+async def get_agent_session_logs(service_id: str, session_id: str) -> AgentSessionLogResponse:
+    get_service_or_404(service_id)
+    runtime = get_agent_runtime()
+    session = runtime.get_session(session_id)
+    if session.service_id != service_id:
+        raise HTTPException(status_code=404, detail="Agent session not found.")
+    return AgentSessionLogResponse(
+        session_id=session_id,
+        items=[_serialize_agent_step_log(item) for item in runtime.get_logs(session_id)],
+    )
+
+
+@app.post("/api/v1/services/{service_id}/agent/sessions/{session_id}/resume", response_model=AgentRunResponse)
+async def resume_agent_session(service_id: str, session_id: str) -> AgentRunResponse:
+    get_service_or_404(service_id)
+    runtime = get_agent_runtime()
+    session = runtime.get_session(session_id)
+    if session.service_id != service_id:
+        raise HTTPException(status_code=404, detail="Agent session not found.")
+    result = await runtime.resume(session_id)
+    return _build_agent_run_response(result)
+
+
+@app.post("/api/v1/services/{service_id}/agent/sessions/{session_id}/cancel", response_model=AgentCancelResponse)
+async def cancel_agent_session(service_id: str, session_id: str) -> AgentCancelResponse:
+    get_service_or_404(service_id)
+    runtime = get_agent_runtime()
+    session = runtime.get_session(session_id)
+    if session.service_id != service_id:
+        raise HTTPException(status_code=404, detail="Agent session not found.")
+    cancelled = runtime.cancel(session_id)
+    return AgentCancelResponse(session_id=cancelled.id, status=cancelled.status)
 
 
 @app.post("/api/v1/feishu/{service_id}/callback")

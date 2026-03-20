@@ -49,6 +49,15 @@ class OpenAICompatibleLLM:
         )
         return self._extract_text(payload)
 
+    async def chat_completion_text(
+        self,
+        *,
+        messages: list[dict[str, Any]],
+        temperature: float = 0.2,
+    ) -> str:
+        payload = await self._chat_completion(messages=messages, temperature=temperature)
+        return self._extract_text(payload)
+
     async def analyze_image(
         self,
         *,
