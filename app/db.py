@@ -32,6 +32,12 @@ def utcnow() -> str:
     return datetime.now(UTC).isoformat()
 
 
+def _loads_json(value: str | None, default: Any) -> Any:
+    if not value:
+        return default
+    return json.loads(value)
+
+
 def init_db() -> None:
     with get_connection() as connection:
         connection.execute(
@@ -48,6 +54,42 @@ def init_db() -> None:
                 llm_model TEXT NOT NULL,
                 llm_system_prompt TEXT,
                 created_at TEXT NOT NULL
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS agent_sessions (
+                id TEXT PRIMARY KEY,
+                service_id TEXT NOT NULL,
+                goal TEXT NOT NULL,
+                status TEXT NOT NULL,
+                step_count INTEGER NOT NULL,
+                max_steps INTEGER NOT NULL,
+                context_json TEXT NOT NULL,
+                constraints_json TEXT NOT NULL,
+                policy_config_json TEXT NOT NULL,
+                current_plan_json TEXT NOT NULL,
+                working_memory_json TEXT NOT NULL,
+                final_answer TEXT,
+                failure_reason TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY(service_id) REFERENCES services(id)
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS agent_step_logs (
+                id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                step_index INTEGER NOT NULL,
+                plan_decision_json TEXT NOT NULL,
+                observation_json TEXT,
+                verification_json TEXT,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(session_id) REFERENCES agent_sessions(id)
             )
             """
         )
@@ -389,4 +431,205 @@ def add_asset(
             ),
         )
     return asset
+
+
+def create_agent_session(
+    *,
+    service_id: str,
+    goal: str,
+    status: str,
+    step_count: int,
+    max_steps: int,
+    context: dict[str, Any] | None = None,
+    constraints: dict[str, Any] | None = None,
+    policy_config: dict[str, Any] | None = None,
+    current_plan: list[str] | None = None,
+    working_memory: dict[str, Any] | None = None,
+    final_answer: str | None = None,
+    failure_reason: str | None = None,
+) -> dict[str, Any]:
+    now = utcnow()
+    session = {
+        "id": str(uuid.uuid4()),
+        "service_id": service_id,
+        "goal": goal,
+        "status": status,
+        "step_count": step_count,
+        "max_steps": max_steps,
+        "context_json": json.dumps(context or {}, ensure_ascii=False),
+        "constraints_json": json.dumps(constraints or {}, ensure_ascii=False),
+        "policy_config_json": json.dumps(policy_config or {}, ensure_ascii=False),
+        "current_plan_json": json.dumps(current_plan or [], ensure_ascii=False),
+        "working_memory_json": json.dumps(working_memory or {}, ensure_ascii=False),
+        "final_answer": final_answer,
+        "failure_reason": failure_reason,
+        "created_at": now,
+        "updated_at": now,
+    }
+    with get_connection() as connection:
+        connection.execute(
+            """
+            INSERT INTO agent_sessions (
+                id, service_id, goal, status, step_count, max_steps,
+                context_json, constraints_json, policy_config_json,
+                current_plan_json, working_memory_json, final_answer,
+                failure_reason, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                session["id"],
+                session["service_id"],
+                session["goal"],
+                session["status"],
+                session["step_count"],
+                session["max_steps"],
+                session["context_json"],
+                session["constraints_json"],
+                session["policy_config_json"],
+                session["current_plan_json"],
+                session["working_memory_json"],
+                session["final_answer"],
+                session["failure_reason"],
+                session["created_at"],
+                session["updated_at"],
+            ),
+        )
+    return get_agent_session(session["id"]) or session
+
+
+def get_agent_session(session_id: str) -> dict[str, Any] | None:
+    with get_connection() as connection:
+        cursor = connection.execute("SELECT * FROM agent_sessions WHERE id = ?", (session_id,))
+        row = cursor.fetchone()
+    return _deserialize_agent_session(row) if row else None
+
+
+def update_agent_session(
+    session_id: str,
+    *,
+    status: str,
+    step_count: int,
+    max_steps: int,
+    context: dict[str, Any],
+    constraints: dict[str, Any],
+    policy_config: dict[str, Any],
+    current_plan: list[str],
+    working_memory: dict[str, Any],
+    final_answer: str | None,
+    failure_reason: str | None,
+) -> dict[str, Any]:
+    now = utcnow()
+    with get_connection() as connection:
+        connection.execute(
+            """
+            UPDATE agent_sessions
+            SET status = ?, step_count = ?, max_steps = ?, context_json = ?,
+                constraints_json = ?, policy_config_json = ?, current_plan_json = ?,
+                working_memory_json = ?, final_answer = ?, failure_reason = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (
+                status,
+                step_count,
+                max_steps,
+                json.dumps(context, ensure_ascii=False),
+                json.dumps(constraints, ensure_ascii=False),
+                json.dumps(policy_config, ensure_ascii=False),
+                json.dumps(current_plan, ensure_ascii=False),
+                json.dumps(working_memory, ensure_ascii=False),
+                final_answer,
+                failure_reason,
+                now,
+                session_id,
+            ),
+        )
+    session = get_agent_session(session_id)
+    if not session:
+        raise ValueError(f"Agent session not found: {session_id}")
+    return session
+
+
+def list_agent_sessions(service_id: str, limit: int = 20) -> list[dict[str, Any]]:
+    with get_connection() as connection:
+        cursor = connection.execute(
+            """
+            SELECT * FROM agent_sessions
+            WHERE service_id = ?
+            ORDER BY created_at DESC
+            LIMIT ?
+            """,
+            (service_id, limit),
+        )
+        rows = cursor.fetchall()
+    return [_deserialize_agent_session(row) for row in rows]
+
+
+def create_agent_step_log(
+    *,
+    session_id: str,
+    step_index: int,
+    plan_decision: dict[str, Any],
+    observation: dict[str, Any] | None = None,
+    verification: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    step_log = {
+        "id": str(uuid.uuid4()),
+        "session_id": session_id,
+        "step_index": step_index,
+        "plan_decision_json": json.dumps(plan_decision, ensure_ascii=False),
+        "observation_json": json.dumps(observation, ensure_ascii=False) if observation is not None else None,
+        "verification_json": json.dumps(verification, ensure_ascii=False) if verification is not None else None,
+        "created_at": utcnow(),
+    }
+    with get_connection() as connection:
+        connection.execute(
+            """
+            INSERT INTO agent_step_logs (
+                id, session_id, step_index, plan_decision_json,
+                observation_json, verification_json, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                step_log["id"],
+                step_log["session_id"],
+                step_log["step_index"],
+                step_log["plan_decision_json"],
+                step_log["observation_json"],
+                step_log["verification_json"],
+                step_log["created_at"],
+            ),
+        )
+    return _deserialize_agent_step_log(step_log)
+
+
+def list_agent_step_logs(session_id: str) -> list[dict[str, Any]]:
+    with get_connection() as connection:
+        cursor = connection.execute(
+            """
+            SELECT * FROM agent_step_logs
+            WHERE session_id = ?
+            ORDER BY step_index ASC, created_at ASC
+            """,
+            (session_id,),
+        )
+        rows = cursor.fetchall()
+    return [_deserialize_agent_step_log(row) for row in rows]
+
+
+def _deserialize_agent_session(row: dict[str, Any]) -> dict[str, Any]:
+    payload = dict(row)
+    payload["context"] = _loads_json(payload.pop("context_json"), {})
+    payload["constraints"] = _loads_json(payload.pop("constraints_json"), {})
+    payload["policy_config"] = _loads_json(payload.pop("policy_config_json"), {})
+    payload["current_plan"] = _loads_json(payload.pop("current_plan_json"), [])
+    payload["working_memory"] = _loads_json(payload.pop("working_memory_json"), {})
+    return payload
+
+
+def _deserialize_agent_step_log(row: dict[str, Any]) -> dict[str, Any]:
+    payload = dict(row)
+    payload["plan_decision"] = _loads_json(payload.pop("plan_decision_json"), {})
+    payload["observation"] = _loads_json(payload.pop("observation_json"), None)
+    payload["verification"] = _loads_json(payload.pop("verification_json"), None)
+    return payload
 # AI GC END

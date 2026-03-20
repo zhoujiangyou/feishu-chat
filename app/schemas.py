@@ -124,4 +124,44 @@ class FeishuChatSummaryResponse(BaseModel):
     knowledge_results: list[dict[str, Any]]
     sent_result: dict[str, Any] | None = None
     saved_source: dict[str, Any] | None = None
+
+
+class AgentRunRequest(BaseModel):
+    goal: str = Field(min_length=1)
+    context: dict[str, Any] = Field(default_factory=dict)
+    constraints: dict[str, Any] = Field(default_factory=dict)
+    policy_config: dict[str, Any] = Field(default_factory=dict)
+
+
+class AgentSessionResponse(BaseModel):
+    session_id: str
+    service_id: str
+    goal: str
+    status: str
+    step_count: int
+    max_steps: int
+    context: dict[str, Any]
+    constraints: dict[str, Any]
+    policy_config: dict[str, Any]
+    current_plan: list[str]
+    working_memory: dict[str, Any]
+    final_answer: str | None = None
+    failure_reason: str | None = None
+    created_at: str
+    updated_at: str
+
+
+class AgentSessionLogResponse(BaseModel):
+    session_id: str
+    items: list[dict[str, Any]]
+
+
+class AgentRunResponse(BaseModel):
+    session: AgentSessionResponse
+    logs: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class AgentCancelResponse(BaseModel):
+    session_id: str
+    status: str
 # AI GC END
