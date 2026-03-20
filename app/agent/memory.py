@@ -1,7 +1,7 @@
 # AI GC START
 from __future__ import annotations
 
-from app.agent.types import AgentSession, AgentStepLog, Observation, WorkingContext
+from app.agent.types import AgentSession, AgentStepLog, Observation, SubgoalPlan, TaskClassification, WorkingContext
 from app.services.knowledge_base import KnowledgeBaseService
 
 
@@ -21,10 +21,18 @@ class AgentMemoryManager:
         session: AgentSession,
         recent_observations: list[Observation],
     ) -> WorkingContext:
+        task_classification = None
+        subgoal_plan = None
+        if session.working_memory.get("task_classification"):
+            task_classification = TaskClassification.model_validate(session.working_memory["task_classification"])
+        if session.working_memory.get("subgoal_plan"):
+            subgoal_plan = SubgoalPlan.model_validate(session.working_memory["subgoal_plan"])
         return WorkingContext(
             knowledge_results=self.retrieve_goal_knowledge(session),
             recent_observations=[item.model_dump() for item in recent_observations[-5:]],
             working_memory=dict(session.working_memory),
+            task_classification=task_classification,
+            subgoal_plan=subgoal_plan,
         )
 
     def merge_observation(self, session: AgentSession, observation: Observation) -> AgentSession:

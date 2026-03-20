@@ -69,6 +69,10 @@ def build_planner_user_prompt(
         "policy_config": session.policy_config,
         "current_plan": session.current_plan,
         "working_memory": session.working_memory,
+        "task_classification": (
+            working_context.task_classification.model_dump() if working_context.task_classification else None
+        ),
+        "subgoal_plan": working_context.subgoal_plan.model_dump() if working_context.subgoal_plan else None,
         "knowledge_results": working_context.knowledge_results,
         "recent_observations": working_context.recent_observations,
         "available_tools": _tool_descriptions(available_tools),

@@ -79,6 +79,7 @@ class AgentRuntime:
                 decision = await self.planner.decide_next_action(session, working_context, available_tools)
                 if decision.updated_plan:
                     session.current_plan = decision.updated_plan
+                session = self.session_store.update_session(session)
 
                 step_log = AgentStepLog(
                     session_id=session.id,
