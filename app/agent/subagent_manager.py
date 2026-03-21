@@ -18,7 +18,9 @@ class SubagentManager:
         self.session_store = session_store or AgentSessionStore()
         self.registry = registry or SubagentRegistry()
 
-    async def run(self, request: SubagentRunRequest) -> SubagentRunResult:
+    async def run(self, request: SubagentRunRequest | None = None, **kwargs) -> SubagentRunResult:
+        if request is None:
+            request = SubagentRunRequest.model_validate(kwargs)
         spec = self.registry.get(request.subagent_name)
         if not spec:
             raise ValueError(f"Unknown subagent: {request.subagent_name}")
