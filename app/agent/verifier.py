@@ -59,6 +59,22 @@ class AgentVerifier:
                 verifier_summary="知识检索未命中，可转为通用问答或继续补充上下文。",
             )
 
+        if observation.tool_name == "run_subagent":
+            summary = str((observation.result or {}).get("summary") or "").strip()
+            if summary:
+                return VerificationResult(
+                    step_success=True,
+                    goal_completed=False,
+                    should_replan=True,
+                    verifier_summary="子 agent 已返回上下文摘要，主会话应基于摘要继续推进。",
+                )
+            return VerificationResult(
+                step_success=False,
+                goal_completed=False,
+                should_replan=True,
+                verifier_summary="子 agent 没有返回有效摘要，需要重新规划。",
+            )
+
         if observation.tool_name == "send_feishu_message":
             if not observation.result or not (observation.result.get("result") or observation.result.get("status") or observation.result.get("receive_id")):
                 return VerificationResult(
