@@ -15,6 +15,7 @@ DEFAULT_ALLOWED_TOOLS = {
     "ask_llm_question",
     "analyze_image_with_llm",
     "summarize_feishu_chat",
+    "run_subagent",
 }
 
 
