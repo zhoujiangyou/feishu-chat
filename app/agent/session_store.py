@@ -14,6 +14,8 @@ class AgentSessionStore:
         *,
         service_id: str,
         goal: str,
+        parent_session_id: str | None = None,
+        agent_type: str = "primary",
         context: dict[str, Any] | None = None,
         constraints: dict[str, Any] | None = None,
         policy_config: dict[str, Any] | None = None,
@@ -22,6 +24,8 @@ class AgentSessionStore:
         session = db.create_agent_session(
             service_id=service_id,
             goal=goal,
+            parent_session_id=parent_session_id,
+            agent_type=agent_type,
             status="created",
             step_count=0,
             max_steps=int(constraints.get("max_steps", 6)),
@@ -42,6 +46,8 @@ class AgentSessionStore:
     def update_session(self, session: AgentSession) -> AgentSession:
         updated = db.update_agent_session(
             session.id,
+            parent_session_id=session.parent_session_id,
+            agent_type=session.agent_type,
             status=session.status,
             step_count=session.step_count,
             max_steps=session.max_steps,
@@ -68,6 +74,9 @@ class AgentSessionStore:
 
     def list_step_logs(self, session_id: str) -> list[AgentStepLog]:
         return [AgentStepLog.model_validate(item) for item in db.list_agent_step_logs(session_id)]
+
+    def list_child_sessions(self, parent_session_id: str) -> list[AgentSession]:
+        return [AgentSession.model_validate(item) for item in db.list_child_agent_sessions(parent_session_id)]
 
     def mark_completed(self, session: AgentSession, final_answer: str) -> AgentSession:
         session.status = "completed"

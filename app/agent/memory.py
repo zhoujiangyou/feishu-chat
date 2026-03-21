@@ -93,6 +93,17 @@ class AgentMemoryManager:
             if observation.result:
                 working_memory["send_result"] = observation.result
 
+        if observation.tool_name == "run_subagent" and observation.result:
+            summary = observation.result.get("summary")
+            child_session_id = observation.result.get("session_id")
+            child_agent_type = observation.result.get("subagent_name")
+            if summary:
+                working_memory["latest_subagent_summary"] = summary
+            if child_session_id:
+                working_memory["latest_subagent_session_id"] = child_session_id
+            if child_agent_type:
+                working_memory["latest_subagent_type"] = child_agent_type
+
         retry_attempts = dict(working_memory.get("retry_attempt_counts") or {})
         if observation.success:
             retry_attempts.pop(observation.tool_name, None)

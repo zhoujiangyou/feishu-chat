@@ -23,6 +23,7 @@ class TaskClassifier:
         mentions_document = any(keyword in goal for keyword in ("文档", "doc", "wiki"))
         mentions_chat_import = any(keyword in goal for keyword in ("抓取群聊", "导入群聊", "同步群聊", "抓取当前群"))
         mentions_import = any(keyword in goal for keyword in ("抓取", "导入", "同步"))
+        mentions_research = any(keyword in goal for keyword in ("研究", "分析一下", "梳理一下", "看看", "调研", "explore"))
 
         if mentions_send:
             secondary_intents.append("send_message")
@@ -33,11 +34,13 @@ class TaskClassifier:
             preferred_tool_sequence.extend(["summarize_feishu_chat"])
             if mentions_send:
                 preferred_tool_sequence.append("send_feishu_message")
+            if mentions_research:
+                secondary_intents.append("delegate_explore")
             return TaskClassification(
                 task_type="chat_summary",
                 summary="需要围绕飞书群聊生成总结，并按需发送结果。",
                 confidence=0.9,
-                secondary_intents=secondary_intents,
+                secondary_intents=self._dedupe(secondary_intents),
                 required_context=self._dedupe(required_context),
                 preferred_tool_sequence=self._dedupe(preferred_tool_sequence),
             )
@@ -51,7 +54,7 @@ class TaskClassifier:
                 task_type="image_analysis",
                 summary="需要基于图片或图像输入进行分析。",
                 confidence=0.9,
-                secondary_intents=secondary_intents,
+                secondary_intents=self._dedupe(secondary_intents),
                 required_context=self._dedupe(required_context),
                 preferred_tool_sequence=self._dedupe(preferred_tool_sequence),
             )
@@ -65,6 +68,7 @@ class TaskClassifier:
                 preferred_tool_sequence.append("send_feishu_message")
             if mentions_document:
                 required_context.append("document")
+                secondary_intents.append("delegate_explore")
             elif mentions_chat_import:
                 required_context.append("chat_id")
             elif mentions_image:
@@ -90,6 +94,8 @@ class TaskClassifier:
             )
 
         preferred_tool_sequence.extend(["search_knowledge", "ask_llm_question"])
+        if mentions_research or mentions_document:
+            secondary_intents.append("delegate_explore")
         return TaskClassification(
             task_type="knowledge_qa",
             summary="优先检索知识库，再结合模型生成回答。",

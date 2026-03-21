@@ -128,6 +128,21 @@ class AgentPlanner:
         working_context: WorkingContext,
         available_tool_names: set[str],
     ) -> PlanDecision | None:
+        if active_subgoal.id == "explore_context" and "run_subagent" in available_tool_names:
+            return PlanDecision(
+                action_type="tool_call",
+                reasoning_summary="当前活跃子目标是探索上下文，先派发只读 explore 子 agent 收集资料。",
+                updated_plan=session.current_plan,
+                next_tool_call=ToolCall(
+                    tool_name="run_subagent",
+                    arguments={
+                        "subagent_name": "explore",
+                        "goal": self._resolve_explore_goal(session, classification),
+                    },
+                    rationale=f"完成子目标：{active_subgoal.title}",
+                ),
+            )
+
         if active_subgoal.id == "search_knowledge" and "search_knowledge" in available_tool_names:
             latest_query = self._resolve_search_query(session, classification)
             session.working_memory["latest_query"] = latest_query
@@ -362,6 +377,13 @@ class AgentPlanner:
             title = source.get("title") or "最新导入内容"
             return f"请基于知识库中刚导入的内容“{title}”完成下面目标：\n{session.goal}"
         return session.goal
+
+    def _resolve_explore_goal(self, session: AgentSession, classification: TaskClassification) -> str:
+        if classification.task_type == "knowledge_ingestion" and session.context.get("document"):
+            return f"请阅读并梳理这个文档相关的关键上下文：{session.context['document']}"
+        if classification.task_type == "chat_summary" and session.context.get("chat_id"):
+            return f"请围绕 chat_id={session.context['chat_id']} 检索并梳理与任务相关的知识背景：{session.goal}"
+        return f"请为下面任务先做只读研究，返回关键发现、风险和建议下一步：{session.goal}"
 
     def _resolve_send_text(self, session: AgentSession, classification: TaskClassification) -> str:
         return str(session.working_memory.get("latest_summary") or session.working_memory.get("latest_answer") or "").strip()

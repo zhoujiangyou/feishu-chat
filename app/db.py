@@ -63,6 +63,8 @@ def init_db() -> None:
                 id TEXT PRIMARY KEY,
                 service_id TEXT NOT NULL,
                 goal TEXT NOT NULL,
+                parent_session_id TEXT,
+                agent_type TEXT NOT NULL,
                 status TEXT NOT NULL,
                 step_count INTEGER NOT NULL,
                 max_steps INTEGER NOT NULL,
@@ -438,6 +440,8 @@ def create_agent_session(
     *,
     service_id: str,
     goal: str,
+    parent_session_id: str | None = None,
+    agent_type: str = "primary",
     status: str,
     step_count: int,
     max_steps: int,
@@ -454,6 +458,8 @@ def create_agent_session(
         "id": str(uuid.uuid4()),
         "service_id": service_id,
         "goal": goal,
+        "parent_session_id": parent_session_id,
+        "agent_type": agent_type,
         "status": status,
         "step_count": step_count,
         "max_steps": max_steps,
@@ -471,16 +477,18 @@ def create_agent_session(
         connection.execute(
             """
             INSERT INTO agent_sessions (
-                id, service_id, goal, status, step_count, max_steps,
+                id, service_id, goal, parent_session_id, agent_type, status, step_count, max_steps,
                 context_json, constraints_json, policy_config_json,
                 current_plan_json, working_memory_json, final_answer,
                 failure_reason, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 session["id"],
                 session["service_id"],
                 session["goal"],
+                session["parent_session_id"],
+                session["agent_type"],
                 session["status"],
                 session["step_count"],
                 session["max_steps"],
@@ -508,6 +516,8 @@ def get_agent_session(session_id: str) -> dict[str, Any] | None:
 def update_agent_session(
     session_id: str,
     *,
+    parent_session_id: str | None,
+    agent_type: str,
     status: str,
     step_count: int,
     max_steps: int,
@@ -524,12 +534,14 @@ def update_agent_session(
         connection.execute(
             """
             UPDATE agent_sessions
-            SET status = ?, step_count = ?, max_steps = ?, context_json = ?,
+            SET parent_session_id = ?, agent_type = ?, status = ?, step_count = ?, max_steps = ?, context_json = ?,
                 constraints_json = ?, policy_config_json = ?, current_plan_json = ?,
                 working_memory_json = ?, final_answer = ?, failure_reason = ?, updated_at = ?
             WHERE id = ?
             """,
             (
+                parent_session_id,
+                agent_type,
                 status,
                 step_count,
                 max_steps,
@@ -560,6 +572,20 @@ def list_agent_sessions(service_id: str, limit: int = 20) -> list[dict[str, Any]
             LIMIT ?
             """,
             (service_id, limit),
+        )
+        rows = cursor.fetchall()
+    return [_deserialize_agent_session(row) for row in rows]
+
+
+def list_child_agent_sessions(parent_session_id: str) -> list[dict[str, Any]]:
+    with get_connection() as connection:
+        cursor = connection.execute(
+            """
+            SELECT * FROM agent_sessions
+            WHERE parent_session_id = ?
+            ORDER BY created_at ASC
+            """,
+            (parent_session_id,),
         )
         rows = cursor.fetchall()
     return [_deserialize_agent_session(row) for row in rows]

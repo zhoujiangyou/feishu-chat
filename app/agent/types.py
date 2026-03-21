@@ -106,6 +106,8 @@ class AgentSession(BaseModel):
     id: str
     service_id: str
     goal: str
+    parent_session_id: str | None = None
+    agent_type: str = "primary"
     status: AgentStatus
     step_count: int
     max_steps: int
@@ -140,5 +142,27 @@ class WorkingContext(BaseModel):
 
 class AgentRunResult(BaseModel):
     session: AgentSession
+    logs: list[AgentStepLog] = Field(default_factory=list)
+
+
+class SubagentSpec(BaseModel):
+    name: str
+    description: str
+    readonly: bool = False
+    preferred_tool_names: list[str] = Field(default_factory=list)
+
+
+class SubagentRunRequest(BaseModel):
+    parent_session_id: str
+    service_id: str
+    subagent_name: str
+    goal: str
+    context: dict[str, Any] = Field(default_factory=dict)
+    constraints: dict[str, Any] = Field(default_factory=dict)
+
+
+class SubagentRunResult(BaseModel):
+    session: AgentSession
+    summary: str
     logs: list[AgentStepLog] = Field(default_factory=list)
 # AI GC END

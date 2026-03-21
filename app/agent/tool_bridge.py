@@ -5,6 +5,7 @@ from typing import Any
 
 from app import db
 from app.agent.exceptions import ToolExecutionError
+from app.agent.subagent_manager import SubagentManager
 from app.agent.types import AgentSession, Observation, ToolCall, ToolSpec
 from app.services.service_api import FeishuChatServiceApiClient
 
@@ -76,12 +77,24 @@ TOOL_REGISTRY: list[ToolSpec] = [
         input_schema={"receive_id": "str", "text": "str", "receive_id_type": "str?"},
         side_effect=True,
     ),
+    ToolSpec(
+        name="run_subagent",
+        description="Spawn a specialized child agent session for research or delegated execution.",
+        category="orchestration",
+        risk_level="read_only",
+        input_schema={"subagent_name": "str", "goal": "str"},
+    ),
 ]
 
 
 class AgentToolBridge:
-    def __init__(self, api_client: FeishuChatServiceApiClient | None = None) -> None:
+    def __init__(
+        self,
+        api_client: FeishuChatServiceApiClient | None = None,
+        subagent_manager: SubagentManager | None = None,
+    ) -> None:
         self.api_client = api_client or FeishuChatServiceApiClient()
+        self.subagent_manager = subagent_manager or SubagentManager()
 
     def list_available_tools(self, session: AgentSession) -> list[ToolSpec]:
         if session.policy_config.get("allow_send_feishu_message", False):
@@ -139,6 +152,19 @@ class AgentToolBridge:
             return await self.api_client.summarize_feishu_chat(service_id=session.service_id, **args)
         if call.tool_name == "send_feishu_message":
             return await self.api_client.send_feishu_message(service_id=session.service_id, **args)
+        if call.tool_name == "run_subagent":
+            subagent_result = await self.subagent_manager.run(
+                parent_session_id=session.id,
+                service_id=session.service_id,
+                subagent_name=str(args["subagent_name"]),
+                goal=str(args["goal"]),
+                context=args.get("context") or session.context,
+                constraints=args.get("constraints") or session.constraints,
+            )
+            return {
+                "session": subagent_result.session.model_dump(),
+                "summary": subagent_result.summary,
+            }
         raise ToolExecutionError(f"Unsupported tool: {call.tool_name}")
 
     def _summarize_result(self, tool_name: str, result: dict[str, Any]) -> str:
@@ -154,6 +180,8 @@ class AgentToolBridge:
             return "Chat summary generated successfully."
         if tool_name == "send_feishu_message":
             return "Feishu message sent successfully."
+        if tool_name == "run_subagent":
+            return "Subagent finished and returned a summary."
         if tool_name.startswith("import_feishu_"):
             source = result.get("source", {})
             title = source.get("title") or tool_name

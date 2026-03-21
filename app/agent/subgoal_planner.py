@@ -45,8 +45,21 @@ class SubgoalPlanner:
         session: AgentSession,
         classification: TaskClassification,
     ) -> list[SubgoalItem]:
-        items = [
-            SubgoalItem(
+        items: list[SubgoalItem] = []
+        if "delegate_explore" in classification.secondary_intents:
+            items.append(
+                SubgoalItem(
+                    id="explore_context",
+                    title="探索上下文",
+                    description="先用只读子 agent 梳理与当前任务相关的资料和上下文。",
+                    preferred_tool="run_subagent",
+                    status="completed" if session.working_memory.get("latest_subagent_summary") else "pending",
+                    completion_hint="working_memory.latest_subagent_summary",
+                )
+            )
+        items.extend(
+            [
+                SubgoalItem(
                 id="collect_chat_context",
                 title="确定目标群聊",
                 description="确认用于总结的 chat_id。",
@@ -54,16 +67,17 @@ class SubgoalPlanner:
                 ask_user_message=None
                 if session.context.get("chat_id")
                 else "请告诉我要处理的 chat_id，或者直接在目标群里向机器人发起这个请求。",
-            ),
-            SubgoalItem(
+                ),
+                SubgoalItem(
                 id="summarize_chat",
                 title="总结群聊",
                 description="调用群聊总结能力生成结构化结果。",
                 preferred_tool="summarize_feishu_chat",
                 status="completed" if session.working_memory.get("latest_summary") else "pending",
                 completion_hint="working_memory.latest_summary",
-            ),
-        ]
+                ),
+            ]
+        )
         if "send_message" in classification.secondary_intents:
             items.append(
                 SubgoalItem(
@@ -90,6 +104,19 @@ class SubgoalPlanner:
         session: AgentSession,
         classification: TaskClassification,
     ) -> list[SubgoalItem]:
+        items: list[SubgoalItem] = []
+        if "delegate_explore" in classification.secondary_intents:
+            items.append(
+                SubgoalItem(
+                    id="explore_context",
+                    title="探索上下文",
+                    description="先用只读子 agent 梳理文档或知识背景。",
+                    preferred_tool="run_subagent",
+                    status="completed" if session.working_memory.get("latest_subagent_summary") else "pending",
+                    completion_hint="working_memory.latest_subagent_summary",
+                )
+            )
+
         collect_item = SubgoalItem(
             id="collect_ingestion_context",
             title="确定导入对象",
@@ -107,7 +134,7 @@ class SubgoalPlanner:
             collect_item.status = "blocked"
             collect_item.ask_user_message = "请补充 image_key、message_id、image_url 或直接发送图片。"
 
-        items = [collect_item]
+        items.append(collect_item)
         if ingest_tool:
             items.append(
                 SubgoalItem(
@@ -240,23 +267,37 @@ class SubgoalPlanner:
         working_context: WorkingContext,
     ) -> list[SubgoalItem]:
         has_searched = any(item.get("tool_name") == "search_knowledge" for item in working_context.recent_observations)
-        items = [
-            SubgoalItem(
+        items: list[SubgoalItem] = []
+        if "delegate_explore" in classification.secondary_intents:
+            items.append(
+                SubgoalItem(
+                    id="explore_context",
+                    title="探索上下文",
+                    description="先用只读子 agent 搜索知识源并梳理相关上下文。",
+                    preferred_tool="run_subagent",
+                    status="completed" if session.working_memory.get("latest_subagent_summary") else "pending",
+                    completion_hint="working_memory.latest_subagent_summary",
+                )
+            )
+        items.extend(
+            [
+                SubgoalItem(
                 id="search_knowledge",
                 title="检索知识",
                 description="先检索当前知识库中的相关上下文。",
                 preferred_tool="search_knowledge",
                 status="completed" if has_searched else "pending",
                 completion_hint="search_knowledge observation",
-            ),
-            SubgoalItem(
+                ),
+                SubgoalItem(
                 id="compose_answer",
                 title="组织回答",
                 description="基于知识检索结果和模型能力生成回答。",
                 preferred_tool="ask_llm_question",
                 status="completed" if self._has_final_content(session) else "pending",
-            ),
-        ]
+                ),
+            ]
+        )
         if "send_message" in classification.secondary_intents:
             items.append(
                 SubgoalItem(
