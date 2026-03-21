@@ -37,6 +37,12 @@ class ToolCall(BaseModel):
     rationale: str = ""
 
 
+class PermissionRule(BaseModel):
+    permission: str
+    pattern: str
+    action: Literal["allow", "deny", "ask"]
+
+
 class PlanDecision(BaseModel):
     action_type: ActionType
     reasoning_summary: str
@@ -120,6 +126,7 @@ class AgentStepLog(BaseModel):
     plan_decision: dict[str, Any]
     observation: dict[str, Any] | None = None
     verification: dict[str, Any] | None = None
+    processor_state: dict[str, Any] | None = None
     created_at: str
 
 

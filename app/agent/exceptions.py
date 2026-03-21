@@ -21,4 +21,8 @@ class PolicyDeniedError(AgentRuntimeError):
 
 class AgentSessionNotFoundError(AgentRuntimeError):
     """Raised when a requested session does not exist."""
+
+
+class DoomLoopDetectedError(AgentRuntimeError):
+    """Raised when the agent repeats the same tool call too many times."""
 # AI GC END

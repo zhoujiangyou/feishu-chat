@@ -171,6 +171,8 @@ async def test_agent_runtime_completes_summary_and_send_goal(tmp_path) -> None:
     assert result.session.final_answer == "这是本次群聊摘要。"
     assert result.session.working_memory["message_sent"] is True
     assert len(result.logs) == 2
+    assert result.logs[0].processor_state is not None
+    assert result.logs[0].processor_state["status"] == "completed"
 
 
 @pytest.mark.anyio

@@ -88,6 +88,7 @@ def init_db() -> None:
                 plan_decision_json TEXT NOT NULL,
                 observation_json TEXT,
                 verification_json TEXT,
+                processor_state_json TEXT,
                 created_at TEXT NOT NULL,
                 FOREIGN KEY(session_id) REFERENCES agent_sessions(id)
             )
@@ -571,6 +572,7 @@ def create_agent_step_log(
     plan_decision: dict[str, Any],
     observation: dict[str, Any] | None = None,
     verification: dict[str, Any] | None = None,
+    processor_state: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     step_log = {
         "id": str(uuid.uuid4()),
@@ -579,6 +581,7 @@ def create_agent_step_log(
         "plan_decision_json": json.dumps(plan_decision, ensure_ascii=False),
         "observation_json": json.dumps(observation, ensure_ascii=False) if observation is not None else None,
         "verification_json": json.dumps(verification, ensure_ascii=False) if verification is not None else None,
+        "processor_state_json": json.dumps(processor_state, ensure_ascii=False) if processor_state is not None else None,
         "created_at": utcnow(),
     }
     with get_connection() as connection:
@@ -586,8 +589,8 @@ def create_agent_step_log(
             """
             INSERT INTO agent_step_logs (
                 id, session_id, step_index, plan_decision_json,
-                observation_json, verification_json, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                observation_json, verification_json, processor_state_json, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 step_log["id"],
@@ -596,6 +599,7 @@ def create_agent_step_log(
                 step_log["plan_decision_json"],
                 step_log["observation_json"],
                 step_log["verification_json"],
+                step_log["processor_state_json"],
                 step_log["created_at"],
             ),
         )
@@ -631,5 +635,6 @@ def _deserialize_agent_step_log(row: dict[str, Any]) -> dict[str, Any]:
     payload["plan_decision"] = _loads_json(payload.pop("plan_decision_json"), {})
     payload["observation"] = _loads_json(payload.pop("observation_json"), None)
     payload["verification"] = _loads_json(payload.pop("verification_json"), None)
+    payload["processor_state"] = _loads_json(payload.pop("processor_state_json", None), None)
     return payload
 # AI GC END

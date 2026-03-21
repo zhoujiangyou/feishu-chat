@@ -7,6 +7,7 @@ from app.agent.memory import AgentMemoryManager
 from app.agent.parameter_extractor import ParameterExtractor
 from app.agent.planner import AgentPlanner
 from app.agent.policy import AgentExecutionPolicy
+from app.agent.session_processor import SessionProcessor
 from app.agent.session_store import AgentSessionStore
 from app.agent.subgoal_state_manager import SubgoalStateManager
 from app.agent.tool_bridge import AgentToolBridge
@@ -26,6 +27,7 @@ class AgentRuntime:
         policy: AgentExecutionPolicy | None = None,
         parameter_extractor: ParameterExtractor | None = None,
         subgoal_state_manager: SubgoalStateManager | None = None,
+        session_processor: SessionProcessor | None = None,
     ) -> None:
         self.session_store = session_store or AgentSessionStore()
         self.planner = planner or AgentPlanner()
@@ -35,6 +37,11 @@ class AgentRuntime:
         self.policy = policy or AgentExecutionPolicy()
         self.parameter_extractor = parameter_extractor or ParameterExtractor()
         self.subgoal_state_manager = subgoal_state_manager or SubgoalStateManager()
+        self.session_processor = session_processor or SessionProcessor(
+            tool_bridge=self.tool_bridge,
+            verifier=self.verifier,
+            policy=self.policy,
+        )
 
     async def run(
         self,
@@ -127,18 +134,18 @@ class AgentRuntime:
                     session = self.session_store.mark_failed(session, decision.reasoning_summary)
                     return AgentRunResult(session=session, logs=self.session_store.list_step_logs(session.id))
 
-                tool_spec = self.tool_bridge.get_tool_spec(decision.next_tool_call.tool_name)
-                self.policy.ensure_tool_allowed(session, tool_spec)
-
-                observation = await self.tool_bridge.execute(
+                processed_step_log, observation, verification = await self.session_processor.process_step(
                     session=session,
-                    call=decision.next_tool_call,
+                    decision=decision,
                     step_index=session.step_count,
+                    previous_logs=step_logs,
                 )
-                verification = await self.verifier.verify_step(session=session, observation=observation)
-                step_log.observation = observation.model_dump()
-                step_log.verification = verification.model_dump()
+                step_log = processed_step_log
                 self.session_store.append_step_log(step_log)
+
+                if observation is None or verification is None:
+                    session = self.session_store.mark_failed(session, "Tool execution step produced no observation.")
+                    return AgentRunResult(session=session, logs=self.session_store.list_step_logs(session.id))
 
                 session = self.memory_manager.merge_observation(session, observation)
                 session = self.subgoal_state_manager.advance_after_step(

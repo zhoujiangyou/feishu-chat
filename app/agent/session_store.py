@@ -62,6 +62,7 @@ class AgentSessionStore:
             plan_decision=step_log.plan_decision,
             observation=step_log.observation,
             verification=step_log.verification,
+            processor_state=step_log.processor_state,
         )
         return AgentStepLog.model_validate(created)
 
